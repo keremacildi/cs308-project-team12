@@ -1,39 +1,74 @@
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status
-from .models import Product, Review
-from .serializers import ProductSerializer, ReviewSerializer
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .models import Product, Order, Rating, Comment
+from django.contrib.auth.decorators import login_required
+import json
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def submit_review(request, product_id):
-    try:
-        product = Product.objects.get(id=product_id)
-    except Product.DoesNotExist:
-        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+@login_required
+def browse_products(request):
+    products = Product.objects.filter(is_available=True).values("id", "name", "description", "price", "stock")
+    return JsonResponse(list(products), safe=False)
 
-    # Check if user has already reviewed the product
-    if Review.objects.filter(user=request.user, product=product).exists():
-        return Response({'error': 'You have already reviewed this product'}, status=status.HTTP_400_BAD_REQUEST)
+@login_required
+@csrf_exempt
+def purchase_product(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        product = get_object_or_404(Product, id=data["product_id"])
+        if product.stock >= data["quantity"]:
+            Order.objects.create(user=request.user, product=product, quantity=data["quantity"], status="Pending")
+            product.stock -= data["quantity"]
+            product.save()
+            return JsonResponse({"message": "Order placed successfully"})
+        return JsonResponse({"error": "Insufficient stock"}, status=400)
 
-    # Ensure user has purchased the product (pseudo-code, modify based on your Order model)
-    if not request.user.orders.filter(items__product=product).exists():
-        return Response({'error': 'You can only review products you have purchased'}, status=status.HTTP_403_FORBIDDEN)
+@login_required
+@csrf_exempt
+def submit_rating(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        product = get_object_or_404(Product, id=data["product_id"])
+        try:
+            Rating.objects.create(user=request.user, product=product, score=data["score"])
+            return JsonResponse({"message": "Rating submitted"})
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
 
-    serializer = ReviewSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(user=request.user, product=product)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+@login_required
+@csrf_exempt
+def submit_comment(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        product = get_object_or_404(Product, id=data["product_id"])
+        try:
+            comment = Comment.objects.create(user=request.user, product=product, text=data["text"])
+            return JsonResponse({"message": "Comment submitted for approval"})
+        except ValueError as e:
+            return JsonResponse({"error": str(e)}, status=400)
 
-@api_view(['GET'])
-def get_reviews(request, product_id):
-    try:
-        product = Product.objects.get(id=product_id)
-    except Product.DoesNotExist:
-        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+@login_required
+def get_approved_comments(request, product_id):
+    comments = Comment.objects.filter(product_id=product_id, is_approved=True).values("user__username", "text")
+    return JsonResponse(list(comments), safe=False)
 
-    reviews = Review.objects.filter(product=product)
-    serializer = ReviewSerializer(reviews, many=True)
-    return Response(serializer.data)
+@login_required
+@csrf_exempt
+def manage_orders(request):
+    if request.method == "DELETE":
+        data = json.loads(request.body)
+        order = get_object_or_404(Order, id=data["order_id"], user=request.user)
+        if order.status == "Pending":
+            order.delete()
+            return JsonResponse({"message": "Order cancelled"})
+        return JsonResponse({"error": "Cannot cancel delivered order"}, status=400)
+
+@login_required
+@csrf_exempt
+def return_product(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        order = get_object_or_404(Order, id=data["order_id"], user=request.user, status="Delivered")
+        order.status = "Returned"
+        order.save()
+        return JsonResponse({"message": "Product returned successfully"})
