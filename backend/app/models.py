@@ -1,132 +1,124 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
-from django.conf import settings
-from django.utils import timezone
-
-# -------------------------------------------
-# (All sprint 1 & 2 models are unchanged here)
-# -------------------------------------------
-class User(AbstractUser):
-    ROLE_CHOICES = [
-        ('customer', 'Customer'),
-        ('product_manager', 'Product Manager'),
-        ('sales_manager', 'Sales Manager'),
-    ]
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
-    home_address = models.TextField(blank=True, null=True)
-
-    def __str__(self):
-        return f"{self.username} ({self.role})"
-
-
-class Category(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-
-    def __str__(self):
-        return self.name
-
+from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 
 class Product(models.Model):
-    name = models.CharField(max_length=200)
-    model = models.CharField(max_length=100, blank=True, null=True)
-    serial_number = models.CharField(max_length=100, blank=True, null=True)
-    description = models.TextField(blank=True, null=True)
-    quantity_in_stock = models.PositiveIntegerField(default=0)
-    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    cost = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0.00,
-        help_text="Used for profit/loss calculations if needed."
-    )
-    warranty_status = models.CharField(max_length=100, blank=True, null=True)
-    distributor_info = models.CharField(max_length=200, blank=True, null=True)
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='products')
-    is_active = models.BooleanField(default=False)
+    """
+    Represents a product available for purchase.
+    """
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    stock = models.PositiveIntegerField()
+    is_available = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.name} - {self.model or ''}"
+        return self.name
 
-
-class Cart(models.Model):
-    customer = models.OneToOneField(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='cart'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Cart of {self.customer.username}"
-
-
-class CartItem(models.Model):
-    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='cart_items')
-    quantity = models.PositiveIntegerField(default=1)
-
-    def __str__(self):
-        return f"CartItem: {self.product.name} (x{self.quantity})"
+    class Meta:
+        ordering = ['-created_at']
 
 
 class Order(models.Model):
-    STATUS_CHOICES = [
-        ('processing', 'Processing'),
-        ('in_transit', 'In Transit'),
-        ('delivered', 'Delivered'),
-        ('cancelled', 'Cancelled'),
-    ]
-    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
+    """
+    Represents an order placed by a user.
+    Supports various statuses to handle order life cycle:
+      - Pending
+      - Delivered
+      - Cancelled
+      - Returned
+    """
+    ORDER_STATUS_CHOICES = (
+        ('Pending', 'Pending'),
+        ('Delivered', 'Delivered'),
+        ('Cancelled', 'Cancelled'),
+        ('Returned', 'Returned'),
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='orders')
+    quantity = models.PositiveIntegerField()
+    status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='Pending')
     order_date = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')
-    delivery_address = models.TextField(blank=True, null=True)
-    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-
-    # NEW: store a path to the PDF invoice if generated
-    invoice_file = models.FileField(upload_to='invoices/', blank=True, null=True, help_text="Path to PDF invoice.")
 
     def __str__(self):
-        return f"Order #{self.id} by {self.customer.username}"
+        return f"Order {self.id} - {self.product.name} for {self.user.username}"
 
-    @property
-    def is_cancelable(self):
-        return self.status == 'processing'
-
-    @property
-    def is_refundable(self):
-        return self.status == 'delivered'
+    class Meta:
+        ordering = ['-order_date']
 
 
-class OrderItem(models.Model):
-    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ordered_items')
-    quantity = models.PositiveIntegerField(default=1)
-    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-
-    def __str__(self):
-        return f"OrderItem: {self.product.name} (x{self.quantity}) - Order #{self.order.id}"
-
-# -------------------------------------------
-# SPRINT 3 Models: Comments & Ratings
-# -------------------------------------------
-class ProductComment(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='comments')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='comments')
-    comment_text = models.TextField()
-    is_approved = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Comment on {self.product.name} by {self.user.username}"
-
-
-class ProductRating(models.Model):
+class Rating(models.Model):
+    """
+    Represents a product rating submitted by a user.
+    
+    Tasks Implemented:
+      - Task 1: Product must be delivered before rating.
+      - Task 2: Rating score must be between 1 and 10 points (covers 1–5 as a subset).
+      - Task 4: Ratings are submitted directly without manager approval.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ratings')
     product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ratings')
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ratings')
-    rating_value = models.PositiveIntegerField(help_text="Rating from 1 to 5 or 1 to 10.")
-    created_at = models.DateTimeField(auto_now_add=True)
+    score = models.PositiveIntegerField()
+
+    def clean(self):
+        # Validate that the rating score is within the allowed range.
+        if not (1 <= self.score <= 10):
+            raise ValidationError("Rating must be between 1 and 10 points.")
+        # Ensure the user has a delivered order for this product.
+        if not Order.objects.filter(user=self.user, product=self.product, status='Delivered').exists():
+            raise ValidationError("You can only rate a product after it has been delivered.")
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Run validations before saving.
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Rating: {self.rating_value} for {self.product.name} by {self.user.username}"
+        return f"Rating {self.score} by {self.user.username} for {self.product.name}"
+
+    class Meta:
+        unique_together = ('user', 'product')
+
+
+class Comment(models.Model):
+    """
+    Represents a comment on a product.
+    
+    Tasks Implemented:
+      - Task 1: Product must be delivered before commenting.
+      - Task 3: Comments require product manager approval (via is_approved flag).
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='comments')
+    text = models.TextField()
+    is_approved = models.BooleanField(default=False)  # Requires manager approval.
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        # Ensure the product has been delivered before allowing a comment.
+        if not Order.objects.filter(user=self.user, product=self.product, status='Delivered').exists():
+            raise ValidationError("You can only comment on a product after it has been delivered.")
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Run validations before saving.
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Comment by {self.user.username} on {self.product.name}"
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class Wishlist(models.Model):
+    """
+    Represents a user's wishlist containing products they wish to save.
+    
+    Task 6: Supports the ability for customers to include products in their wishlists.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wishlist')
+    products = models.ManyToManyField(Product, related_name='wishlisted_by')
+
+    def __str__(self):
+        return f"Wishlist for {self.user.username}"
