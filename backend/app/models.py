@@ -1,7 +1,7 @@
 from django.db import models
 
 class Customer(models.Model):
-    # Django automatically creates an AutoField named 'id' as primary key.
+    # Django automatically creates id as primary key
     name = models.CharField(max_length=100)
     email = models.EmailField(unique=True)
     home_address = models.TextField(blank=True, null=True)
@@ -11,7 +11,6 @@ class Customer(models.Model):
         return self.name        
 
 class Product(models.Model):
-    # Django will create an 'id' primary key automatically unless you override it.
     name = models.CharField(max_length=100)
     model = models.CharField(max_length=100, blank=True, null=True)
     serial_number = models.CharField(max_length=100, unique=True)
