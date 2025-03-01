@@ -1,22 +1,23 @@
 from rest_framework import serializers
-from .models import Product, Review, Order, OrderItem
+from .models import Product, Rating, Comment
 
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
-        fields = ['id', 'name', 'description', 'price', 'quantity_in_stock', 'category', 'is_active']
+        fields = ["id", "name", "description", "price", "stock", "is_available"]
 
-class ReviewSerializer(serializers.ModelSerializer):
-    user = serializers.ReadOnlyField(source='user.username')
-    created_at = serializers.ReadOnlyField()
-
+class RatingSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Review
-        fields = ['id', 'product', 'user', 'rating', 'comment', 'is_approved', 'created_at']
-        read_only_fields = ['is_approved']  # Prevent users from modifying approval status
+        model = Rating
+        fields = ["user", "product", "score"]
 
-    def validate_rating(self, value):
-        # Ensure rating is either 1-5 or 1-10
-        if value < 1 or value > 10:
-            raise serializers.ValidationError("Rating must be between 1 and 10.")
+    def validate_score(self, value):
+        if not (1 <= value <= 5 or 1 <= value <= 10):
+            raise serializers.ValidationError("Rating must be between 1-5 or 1-10 points.")
         return value
+
+class CommentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Comment
+        fields = ["user", "product", "text", "is_approved"]
+        read_only_fields = ["is_approved"]
