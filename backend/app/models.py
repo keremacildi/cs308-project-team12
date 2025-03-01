@@ -35,8 +35,9 @@ class Product(models.Model):
     cost = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        default=0.00,
-        help_text="Used for profit/loss calculations if needed."
+        blank=True,
+        null=True,
+        help_text="Defaults to 50% of sale price unless specified."
     )
     warranty_status = models.CharField(max_length=100, blank=True, null=True)
     distributor_info = models.CharField(max_length=200, blank=True, null=True)
@@ -44,6 +45,11 @@ class Product(models.Model):
     is_active = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.cost is None:
+            self.cost = self.price * 0.5  # Default cost to 50% of price if not set
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} - {self.model or ''}"
@@ -106,3 +112,21 @@ class OrderItem(models.Model):
 
     def __str__(self):
         return f"OrderItem: {self.product.name} (x{self.quantity}) - Order #{self.order.id}"
+
+
+# -------------------------
+# NEW: Product Review Model
+# -------------------------
+
+class Review(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])
+    comment = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('product', 'user')  # Ensure a user can review a product only once
+
+    def __str__(self):
+        return f"Review by {self.user.username} for {self.product.name} - {self.rating} Stars"
