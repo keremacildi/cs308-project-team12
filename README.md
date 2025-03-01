@@ -3,8 +3,8 @@ Bu proje React (frontend) + Django (backend) tabanlı bir uygulamadır.
 
 main branch onemli degil projenin son hali sprint5 olacak. her sprintteki bitirdiginiz gorevi ilgili sprinte commitleyin. her sprinttin icinde ondan onceki sprintlerin dosyalarinin da guncel hali olmali. zaten 100 tane revize atacaz.
 
-kerem acildi      sprint3 done
-caglar uysal      ...
+kerem acildi      sprint3 done \n
+caglar uysal      ...\n
 batuhan erdemir   ...
 raid bahadir      ...
 
