@@ -46,3 +46,47 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.model or ''}"
+    
+from django.utils.translation import gettext_lazy as _
+
+# 4) Shopping Cart Model
+class ShoppingCart(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+    session_key = models.CharField(max_length=100, blank=True, null=True)  # For guest users
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Cart ({self.user.username if self.user else 'Guest'})"
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(ShoppingCart, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey('Product', on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+
+    def subtotal(self):
+        return self.quantity * self.product.price
+
+# 5) Order Model
+class Order(models.Model):
+    class OrderStatus(models.TextChoices):
+        PROCESSING = "processing", _("Processing")
+        IN_TRANSIT = "in_transit", _("In Transit")
+        DELIVERED = "delivered", _("Delivered")
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    status = models.CharField(max_length=20, choices=OrderStatus.choices, default=OrderStatus.PROCESSING)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Order {self.id} - {self.user.username} ({self.status})"
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey('Product', on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.product.name} x {self.quantity}"
+
