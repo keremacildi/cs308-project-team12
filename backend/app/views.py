@@ -1,4 +1,4 @@
-from django.db.models import Count
+from django.db.models import Count, Sum, F
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework import status, viewsets
@@ -11,7 +11,7 @@ import uuid
 import os
 from .models import (
     Product, Review, Order, AnonymousCart, AnonymousCartItem,
-    Cart, CartItem, Payment, Invoice, OrderItem
+    Cart, CartItem, Payment, Invoice, OrderItem, Category, User
 )
 from .serializers import ProductSerializer, ReviewSerializer
 
@@ -429,3 +429,132 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         refund_amount = sum(item.purchase_price * item.quantity for item in order.items.all())
         return Response({'refund_amount': refund_amount})
+
+
+class AdminViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def check_manager_access(self, request):
+        """Simple check for manager role"""
+        if request.user.role != 'product_manager':
+            return Response({'error': 'Unauthorized. Manager access required.'}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        return None
+
+    @action(detail=False, methods=['get'])
+    def products(self, request):
+        """List all products with their details"""
+        auth_error = self.check_manager_access(request)
+        if auth_error:
+            return auth_error
+
+        products = Product.objects.all()
+        return Response([{
+            'id': product.id,
+            'name': product.name,
+            'price': str(product.price),
+            'stock': product.quantity_in_stock,
+            'category': product.category.name if product.category else None,
+            'is_active': product.is_active
+        } for product in products])
+
+    @action(detail=False, methods=['get'])
+    def orders(self, request):
+        """List all orders with essential details"""
+        auth_error = self.check_manager_access(request)
+        if auth_error:
+            return auth_error
+
+        orders = Order.objects.all().order_by('-order_date')
+        return Response([{
+            'id': order.id,
+            'customer': order.customer.username,
+            'total': str(order.total_price),
+            'status': order.status,
+            'date': order.order_date
+        } for order in orders])
+
+    @action(detail=True, methods=['patch'])
+    def update_order(self, request, pk=None):
+        """Update order status"""
+        auth_error = self.check_manager_access(request)
+        if auth_error:
+            return auth_error
+
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('status')
+        if new_status in dict(Order.STATUS_CHOICES):
+            order.status = new_status
+            order.save()
+            return Response({'message': f'Order status updated to {new_status}'})
+        return Response({'error': 'Invalid status'}, 
+                       status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
+    def add_product(self, request):
+        """Add a new product"""
+        auth_error = self.check_manager_access(request)
+        if auth_error:
+            return auth_error
+
+        required_fields = ['name', 'price', 'quantity_in_stock']
+        if not all(field in request.data for field in required_fields):
+            return Response({'error': 'Missing required fields'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+
+        product = Product.objects.create(
+            name=request.data['name'],
+            price=request.data['price'],
+            quantity_in_stock=request.data['quantity_in_stock'],
+            description=request.data.get('description', ''),
+            category_id=request.data.get('category_id'),
+            is_active=request.data.get('is_active', True)
+        )
+        
+        return Response({
+            'message': 'Product added successfully',
+            'product_id': product.id
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['put'])
+    def update_product(self, request, pk=None):
+        """Update product details"""
+        auth_error = self.check_manager_access(request)
+        if auth_error:
+            return auth_error
+
+        try:
+            product = Product.objects.get(pk=pk)
+        except Product.DoesNotExist:
+            return Response({'error': 'Product not found'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+
+        # Update only provided fields
+        for field in ['name', 'price', 'quantity_in_stock', 'description', 
+                     'category_id', 'is_active']:
+            if field in request.data:
+                setattr(product, field, request.data[field])
+        
+        product.save()
+        return Response({'message': 'Product updated successfully'})
+
+    @action(detail=False, methods=['get'])
+    def dashboard(self, request):
+        """Simple dashboard with key metrics"""
+        auth_error = self.check_manager_access(request)
+        if auth_error:
+            return auth_error
+
+        return Response({
+            'total_products': Product.objects.count(),
+            'low_stock_products': Product.objects.filter(
+                quantity_in_stock__lt=10).count(),
+            'pending_orders': Order.objects.filter(
+                status='processing').count(),
+            'total_orders': Order.objects.count()
+        })
