@@ -86,7 +86,7 @@ class Order(models.Model):
         ('delivered', 'Delivered'),
         ('cancelled', 'Cancelled'),
     ]
-    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders')
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders', null=True, blank=True)
     order_date = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')
     delivery_address = models.TextField(blank=True, null=True)
@@ -130,3 +130,68 @@ class Review(models.Model):
 
     def __str__(self):
         return f"Review by {self.user.username} for {self.product.name} - {self.rating} Stars"
+
+# -------------------------
+# Anonymous Shopping Cart Models
+# -------------------------
+
+class AnonymousCart(models.Model):
+    session_key = models.CharField(max_length=40, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_modified = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Anonymous Cart ({self.session_key})"
+
+
+class AnonymousCartItem(models.Model):
+    cart = models.ForeignKey(AnonymousCart, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Anonymous CartItem: {self.product.name} (x{self.quantity})"
+
+    class Meta:
+        unique_together = ('cart', 'product')
+
+
+# -------------------------
+# Payment Models
+# -------------------------
+
+class Payment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('refunded', 'Refunded')
+    ]
+
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='payment')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    transaction_id = models.CharField(max_length=100, unique=True)
+    payment_method = models.CharField(max_length=50)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Payment {self.transaction_id} for Order #{self.order.id}"
+
+
+# -------------------------
+# Invoice Model
+# -------------------------
+
+class Invoice(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='invoice')
+    invoice_number = models.CharField(max_length=50, unique=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
+    pdf_file = models.FileField(upload_to='invoices/', null=True, blank=True)
+    sent_to_email = models.EmailField()
+    is_sent = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Invoice #{self.invoice_number} for Order #{self.order.id}"
