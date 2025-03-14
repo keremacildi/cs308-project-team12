@@ -1,0 +1,142 @@
+.profileContainer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #f0f8ff; /* Hafif mavi arka plan */
+    padding: 2rem;
+}
+
+.profileCard {
+    background: #ffffff;
+    border-radius: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 500px;
+    padding: 2.5rem;
+    transition: all 0.3s ease;
+}
+
+.profileHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.profileHeader h1 {
+    font-size: 1.8rem;
+    color: #1e90ff; /* Mavi başlık */
+    margin: 0;
+    border-bottom: 3px solid #4169e1; /* Koyu mavi alt çizgi */
+    padding-bottom: 0.5rem;
+}
+
+.editToggle button {
+    background: #1e90ff; /* Mavi buton */
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.editToggle button:hover {
+    background: #4169e1; /* Hoverda koyu mavi */
+    transform: translateY(-2px);
+}
+
+.editActions {
+    display: flex;
+    gap: 1rem;
+}
+
+.saveButton,
+.cancelButton {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 1rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.saveButton {
+    background-color: #1e90ff; /* Mavi kaydet butonu */
+    color: white;
+}
+
+.saveButton:hover {
+    background-color: #4169e1;
+    transform: translateY(-2px);
+}
+
+.cancelButton {
+    background-color: #ff4040; /* Kırmızı iptal butonu */
+    color: white;
+}
+
+.cancelButton:hover {
+    background-color: #cc3333;
+    transform: translateY(-2px);
+}
+
+.profileForm {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.inputWrapper {
+    position: relative;
+}
+
+.inputGroup {
+    display: flex;
+    align-items: center;
+    background: #f8faff; /* Çok hafif mavi arka plan */
+    border-radius: 1rem;
+    border: 2px solid #b0c4de; /* Açık mavi kenar */
+    transition: all 0.3s ease;
+}
+
+.inputIcon {
+    margin-left: 1rem;
+    color: #1e90ff; /* Mavi ikon */
+}
+
+.input {
+    flex-grow: 1;
+    padding: 1rem 1rem 1rem 0.5rem;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 1rem;
+    color: #333;
+}
+
+.input:disabled {
+    background: #e6e6e6;
+    cursor: not-allowed;
+}
+
+.inputError {
+    border-color: #ff4040; /* Kırmızı hata kenarı */
+}
+
+.errorText {
+    color: #ff4040;
+    font-size: 0.8rem;
+    margin-top: 0.5rem;
+    margin-left: 1rem;
+}
+
+.input:focus {
+    border-color: #1e90ff; /* Odaklandığında mavi kenar */
+}
