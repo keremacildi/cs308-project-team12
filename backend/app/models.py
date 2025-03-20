@@ -2,6 +2,10 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 
+# Django'nun yerleşik istisnaları ve e-posta fonksiyonu
+from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
+
 # -------------------------
 # SPRINT 1 Models (Unchanged)
 # -------------------------
@@ -77,6 +81,15 @@ class CartItem(models.Model):
 
     def __str__(self):
         return f"CartItem: {self.product.name} (x{self.quantity})"
+
+    # -------------------------
+    # EKLENTİ (Out-of-stock engelleme)
+    # -------------------------
+    def save(self, *args, **kwargs):
+        """Stok yetersizse sepete eklemeyi engelle."""
+        if self.product.quantity_in_stock < self.quantity:
+            raise ValidationError("Cannot add item to cart because it's out of stock.")
+        super().save(*args, **kwargs)
 
 
 class Order(models.Model):
@@ -180,6 +193,57 @@ class Payment(models.Model):
     def __str__(self):
         return f"Payment {self.transaction_id} for Order #{self.order.id}"
 
+    # -------------------------
+    # EKLENTİ (Stok arttırma/azaltma & e-posta bilgilendirme)
+    # -------------------------
+    def save(self, *args, **kwargs):
+        # Bu kaydın önceki durumunu öğrenmek için (örnek: status değişmiş mi diye bakacağız)
+        previous_status = None
+        if self.pk:
+            previous_status = Payment.objects.get(pk=self.pk).status
+
+        super().save(*args, **kwargs)
+
+        # Status değiştiyse kontrol edelim
+        if previous_status != self.status:
+            # 1) Ödeme tamamlanırsa: stok düş, kargoya verileceğini bildir
+            if self.status == 'completed':
+                # Siparişteki ürünleri stoktan düş
+                for item in self.order.items.all():
+                    product = item.product
+                    product.quantity_in_stock = max(product.quantity_in_stock - item.quantity, 0)
+                    product.save()
+
+                # Teslimat birimine e-posta ile bildirim gönderme örneği (opsiyonel)
+                send_mail(
+                    subject=f"Order #{self.order.id} ready for delivery",
+                    message=f"Order #{self.order.id} has been paid and is ready for delivery processing.",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=["delivery@yourcompany.com"],  # Delivery departmanı maili
+                    fail_silently=True
+                )
+
+            # 2) İade onaylanırsa: stok ekle, müşteriye bilgilendirme gönder
+            elif self.status == 'refunded':
+                # Stoğu geri ekle
+                for item in self.order.items.all():
+                    product = item.product
+                    product.quantity_in_stock += item.quantity
+                    product.save()
+
+                # Müşteriye iade bildirimi
+                if self.order.customer and self.order.customer.email:
+                    send_mail(
+                        subject=f"Refund Approved for Order #{self.order.id}",
+                        message=(
+                            f"Hello {self.order.customer.username},\n\n"
+                            f"Your refund has been approved. Refunded Amount: {self.amount}\n"
+                            "Thank you."
+                        ),
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=[self.order.customer.email],
+                        fail_silently=True
+                    )
 
 # -------------------------
 # Invoice Model
