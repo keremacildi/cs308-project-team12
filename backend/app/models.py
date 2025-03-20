@@ -1,124 +1,285 @@
 from django.db import models
-from django.contrib.auth.models import User
-from django.core.exceptions import ValidationError
+from django.contrib.auth.models import AbstractUser
+from django.conf import settings
 
-class Product(models.Model):
-    """
-    Represents a product available for purchase.
-    """
-    name = models.CharField(max_length=255)
-    description = models.TextField()
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    stock = models.PositiveIntegerField()
-    is_available = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+# Django exceptions and mail function
+from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
+
+# -------------------------
+# SPRINT 1 Models (Unchanged)
+# -------------------------
+class User(AbstractUser):
+    ROLE_CHOICES = [
+        ('customer', 'Customer'),
+        ('product_manager', 'Product Manager'),
+        ('sales_manager', 'Sales Manager'),
+    ]
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
+    home_address = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.username} ({self.role})"
+
+
+class Category(models.Model):
+    name = models.CharField(max_length=100, unique=True)
 
     def __str__(self):
         return self.name
 
-    class Meta:
-        ordering = ['-created_at']
+
+class Product(models.Model):
+    name = models.CharField(max_length=200)
+    model = models.CharField(max_length=100, blank=True, null=True)
+    serial_number = models.CharField(max_length=100, blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    quantity_in_stock = models.PositiveIntegerField(default=0)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    cost = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text="Defaults to 50% of sale price unless specified."
+    )
+    warranty_status = models.CharField(max_length=100, blank=True, null=True)
+    distributor_info = models.CharField(max_length=200, blank=True, null=True)
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='products')
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.cost is None:
+            self.cost = self.price * 0.5  # Default cost to 50% of price if not set
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} - {self.model or ''}"
+
+# -------------------------
+# SPRINT 2 Models (New!)
+# -------------------------
+
+class Cart(models.Model):
+    customer = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='cart'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Cart of {self.customer.username}"
+
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='cart_items')
+    quantity = models.PositiveIntegerField(default=1)
+
+    def __str__(self):
+        return f"CartItem: {self.product.name} (x{self.quantity})"
+
+    # -------------------------
+    # ADD (Out-of-stock check)
+    # -------------------------
+    def save(self, *args, **kwargs):
+        """If stock is insufficient, prevent adding item to cart."""
+        if self.product.quantity_in_stock < self.quantity:
+            raise ValidationError("Cannot add item to cart because it's out of stock.")
+        super().save(*args, **kwargs)
 
 
 class Order(models.Model):
-    """
-    Represents an order placed by a user.
-    Supports various statuses to handle order life cycle:
-      - Pending
-      - Delivered
-      - Cancelled
-      - Returned
-    """
-    ORDER_STATUS_CHOICES = (
-        ('Pending', 'Pending'),
-        ('Delivered', 'Delivered'),
-        ('Cancelled', 'Cancelled'),
-        ('Returned', 'Returned'),
-    )
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='orders')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='orders')
-    quantity = models.PositiveIntegerField()
-    status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='Pending')
+    STATUS_CHOICES = [
+        ('processing', 'Processing'),
+        ('in_transit', 'In Transit'),
+        ('delivered', 'Delivered'),
+        ('cancelled', 'Cancelled'),
+    ]
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='orders', null=True, blank=True)
     order_date = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='processing')
+    delivery_address = models.TextField(blank=True, null=True)
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     def __str__(self):
-        return f"Order {self.id} - {self.product.name} for {self.user.username}"
+        return f"Order #{self.id} by {self.customer.username}"
 
-    class Meta:
-        ordering = ['-order_date']
+    @property
+    def is_cancelable(self):
+        return self.status == 'processing'
+
+    @property
+    def is_refundable(self):
+        return self.status == 'delivered'
 
 
-class Rating(models.Model):
-    """
-    Represents a product rating submitted by a user.
-    
-    Tasks Implemented:
-      - Task 1: Product must be delivered before rating.
-      - Task 2: Rating score must be between 1 and 10 points (covers 1–5 as a subset).
-      - Task 4: Ratings are submitted directly without manager approval.
-    """
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ratings')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ratings')
-    score = models.PositiveIntegerField()
-
-    def clean(self):
-        # Validate that the rating score is within the allowed range.
-        if not (1 <= self.score <= 10):
-            raise ValidationError("Rating must be between 1 and 10 points.")
-        # Ensure the user has a delivered order for this product.
-        if not Order.objects.filter(user=self.user, product=self.product, status='Delivered').exists():
-            raise ValidationError("You can only rate a product after it has been delivered.")
-
-    def save(self, *args, **kwargs):
-        self.clean()  # Run validations before saving.
-        super().save(*args, **kwargs)
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ordered_items')
+    quantity = models.PositiveIntegerField(default=1)
+    purchase_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     def __str__(self):
-        return f"Rating {self.score} by {self.user.username} for {self.product.name}"
-
-    class Meta:
-        unique_together = ('user', 'product')
+        return f"OrderItem: {self.product.name} (x{self.quantity}) - Order #{self.order.id}"
 
 
-class Comment(models.Model):
-    """
-    Represents a comment on a product.
-    
-    Tasks Implemented:
-      - Task 1: Product must be delivered before commenting.
-      - Task 3: Comments require product manager approval (via is_approved flag).
-    """
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='comments')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='comments')
-    text = models.TextField()
-    is_approved = models.BooleanField(default=False)  # Requires manager approval.
+# -------------------------
+# NEW: Product Review Model
+# -------------------------
+
+class Review(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    rating = models.IntegerField(choices=[(i, i) for i in range(1, 6)])
+    comment = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def clean(self):
-        # Ensure the product has been delivered before allowing a comment.
-        if not Order.objects.filter(user=self.user, product=self.product, status='Delivered').exists():
-            raise ValidationError("You can only comment on a product after it has been delivered.")
-
-    def save(self, *args, **kwargs):
-        self.clean()  # Run validations before saving.
-        super().save(*args, **kwargs)
+    class Meta:
+        unique_together = ('product', 'user')  # Ensure a user can review a product only once
 
     def __str__(self):
-        return f"Comment by {self.user.username} on {self.product.name}"
+        return f"Review by {self.user.username} for {self.product.name} - {self.rating} Stars"
+
+# -------------------------
+# Anonymous Shopping Cart Models
+# -------------------------
+
+class AnonymousCart(models.Model):
+    session_key = models.CharField(max_length=40, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_modified = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Anonymous Cart ({self.session_key})"
+
+
+class AnonymousCartItem(models.Model):
+    cart = models.ForeignKey(AnonymousCart, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Anonymous CartItem: {self.product.name} (x{self.quantity})"
 
     class Meta:
-        ordering = ['-created_at']
+        unique_together = ('cart', 'product')
 
 
-class Wishlist(models.Model):
-    """
-    Represents a user's wishlist containing products they wish to save.
-    
-    Task 6: Supports the ability for customers to include products in their wishlists.
-    """
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wishlist')
-    products = models.ManyToManyField(Product, related_name='wishlisted_by')
+# -------------------------
+# Payment Models
+# -------------------------
+
+class Payment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('refunded', 'Refunded')
+    ]
+
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='payment')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    transaction_id = models.CharField(max_length=100, unique=True)
+    payment_method = models.CharField(max_length=50)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Wishlist for {self.user.username}"
+        return f"Payment {self.transaction_id} for Order #{self.order.id}"
+
+    # -------------------------
+    # ADD (Stock increase/decrease & email notification)
+    # -------------------------
+    def save(self, *args, **kwargs):
+        previous_status = None
+        if self.pk:
+            previous_status = Payment.objects.get(pk=self.pk).status
+
+        super().save(*args, **kwargs)
+
+        if previous_status != self.status:
+            # If payment is completed, reduce stock and notify delivery department
+            if self.status == 'completed':
+                for item in self.order.items.all():
+                    product = item.product
+                    product.quantity_in_stock = max(product.quantity_in_stock - item.quantity, 0)
+                    product.save()
+
+                send_mail(
+                    subject=f"Order #{self.order.id} ready for delivery",
+                    message=f"Order #{self.order.id} has been paid and is ready for delivery processing.",
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=["delivery@yourcompany.com"],
+                    fail_silently=True
+                )
+
+            # If payment is refunded, restock and notify the user
+            elif self.status == 'refunded':
+                for item in self.order.items.all():
+                    product = item.product
+                    product.quantity_in_stock += item.quantity
+                    product.save()
+
+                if self.order.customer and self.order.customer.email:
+                    send_mail(
+                        subject=f"Refund Approved for Order #{self.order.id}",
+                        message=(
+                            f"Hello {self.order.customer.username},\n\n"
+                            f"Your refund has been approved. Refunded Amount: {self.amount}\n"
+                            "Thank you."
+                        ),
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=[self.order.customer.email],
+                        fail_silently=True
+                    )
+
+# -------------------------
+# Invoice Model
+# -------------------------
+
+class Invoice(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='invoice')
+    invoice_number = models.CharField(max_length=50, unique=True)
+    generated_at = models.DateTimeField(auto_now_add=True)
+    pdf_file = models.FileField(upload_to='invoices/', null=True, blank=True)
+    sent_to_email = models.EmailField()
+    is_sent = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Invoice #{self.invoice_number} for Order #{self.order.id}"
+
+# -------------------------
+# ADD: Product Manager Explanation
+# -------------------------
+# Note: In an actual Django project, you would typically handle product/category creation
+# or removal permissions using views, admin configurations, or permission checks
+# like:
+#
+#     if request.user.role != 'product_manager':
+#         return HttpResponseForbidden("Only product managers can manage products!")
+#
+# This model layer alone does not handle who performs the operation.
+
+# -------------------------
+# ADD: DeliveryList Model
+# -------------------------
+class DeliveryList(models.Model):
+    """
+    Delivery list that tracks shipments. The 'product_manager' also acts as the delivery department.
+    """
+    delivery_id = models.AutoField(primary_key=True)
+    customer_id = models.PositiveIntegerField()
+    product_id = models.PositiveIntegerField()
+    quantity = models.PositiveIntegerField(default=1)
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    delivery_address = models.TextField(blank=True, null=True)
+    is_completed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Delivery #{self.delivery_id} to Customer {self.customer_id}"
