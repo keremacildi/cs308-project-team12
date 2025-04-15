@@ -1,26 +1,24 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import (
-    list_products, AnonymousCartViewSet, 
-    ShoppingCartViewSet, AdminViewSet, search_products, place_order
-)
-
-router = DefaultRouter()
-router.register(r'anonymous-cart', AnonymousCartViewSet, basename='anonymous-cart')
-router.register(r'shopping-cart', ShoppingCartViewSet, basename='shopping-cart')
+from django.contrib import admin
+from django.urls import path
+from store import views
 
 urlpatterns = [
-    path('', include(router.urls)),
-    path('products/', list_products, name='product-list'),
-    path('search/', search_products, name='search-products'),
-    path('order/', place_order, name='place-order'),
+    path('admin/', admin.site.urls),
     
-    # Admin endpoints for managerial tasks.
-    path('manager/products/', AdminViewSet.as_view({
-        'get': 'products',
-        'post': 'add_product'
-    }), name='manager-products'),
-    path('manager/products/<int:pk>/', AdminViewSet.as_view({
-        'put': 'update_product'
-    }), name='manager-product-detail'),
+    # Product listing, details, search & sort
+    path('products/', views.product_list, name='product_list'),
+    path('products/<int:product_id>/', views.product_detail, name='product_detail'),
+    
+    # Post-delivery: Rating & Comment
+    path('products/<int:product_id>/rate/', views.submit_rating, name='submit_rating'),
+    path('products/<int:product_id>/comment/', views.submit_comment, name='submit_comment'),
+    
+    # Cart: view, add, and remove items
+    path('cart/', views.view_cart, name='view_cart'),
+    path('cart/add/<int:product_id>/', views.add_to_cart, name='add_to_cart'),
+    path('cart/remove/<int:item_id>/', views.remove_from_cart, name='remove_from_cart'),
+    
+    # Checkout and Order History (including delivery processing and invoice generation)
+    path('checkout/', views.checkout, name='checkout'),
+    path('orders/', views.order_history, name='order_history'),
 ]
