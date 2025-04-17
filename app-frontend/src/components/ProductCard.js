@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import AddToCartButton from "./ui/AddToCartButton";
 
-export default function ProductCard({ id, title, price, image, stock }) {
+export default function ProductCard({ id, title, price, image, stock, smallImage }) {
   // Create a product object including the stock property
   const product = { id, title, price, image, stock };
 
@@ -38,10 +38,14 @@ export default function ProductCard({ id, title, price, image, stock }) {
       {/* Only wrap the product details in a Link so clicking them navigates */}
       <Link href={`/products/${id}`} className="no-underline" style={styles.detailsLink}>
         <div>
-          <img src={image} alt="A detailed description of the image content" style={styles.image} />
+          <img 
+            src={image} 
+            alt="A detailed description of the image content" 
+            style={smallImage ? styles.smallImage : styles.image} 
+          />
           <h3>{title}</h3>
           <p>${price}</p>
-          {stock === 0 && <p style={styles.outOfStock}>Out of Stock</p>}
+          {stock === 0 && <p style={styles.outOfStock}></p>}
         </div>
       </Link>
       {/* Place action buttons outside the Link so clicks on them won't trigger navigation */}
@@ -73,10 +77,23 @@ const styles = {
     textDecoration: "none",
     cursor: "pointer",
   },
+  // Default image style with centered image
   image: {
     width: "100%",
     height: "auto",
     marginBottom: "8px",
+    display: "block",
+    marginLeft: "auto",
+    marginRight: "auto",
+  },
+  // Smaller image style with centered image
+  smallImage: {
+    width: "150px",
+    height: "auto",
+    marginBottom: "8px",
+    display: "block",
+    marginLeft: "auto",
+    marginRight: "auto",
   },
   outOfStock: {
     color: "red",

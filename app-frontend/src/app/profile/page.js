@@ -5,10 +5,12 @@ import styles from "../../styles/profile.module.css";
 
 // Basit bir Base64 şifreleme simülasyonu (gerçek uygulamada bcrypt gibi bir yöntem kullanılmalı)
 const encryptPassword = (password) => {
+    console.log("Encrypting password:", password);
     return btoa(password); // Base64 encode
 };
 
 const decryptPassword = (encryptedPassword) => {
+    console.log("Decrypting password:", encryptedPassword);
     return atob(encryptedPassword); // Base64 decode
 };
 
@@ -210,21 +212,6 @@ export default function ProfilePage() {
                         error={errors.address}
                         disabled={!isEditing}
                     />
-
-                    {isEditing && (
-                        <InputField
-                            icon={Lock}
-                            type="password"
-                            name="oldPassword"
-                            value={oldPassword}
-                            onChange={(e) => {
-                                setOldPassword(e.target.value);
-                                setOldPasswordError("");
-                            }}
-                            error={oldPasswordError}
-                            placeholder="Enter your old password"
-                        />
-                    )}
 
                     <InputField
                         icon={Lock}

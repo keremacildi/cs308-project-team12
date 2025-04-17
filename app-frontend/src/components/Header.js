@@ -37,6 +37,8 @@ export default function Header() {
         <Link href="/wishlist" style={styles.link}>Wishlist</Link>
         <Link href="/profile" style={styles.link}>Profile</Link>
         <Link href="/login" style={styles.link}>Login</Link>
+        <Link href="/orders" style={styles.link}>Orders</Link>
+
       </nav>
       <form onSubmit={handleSearch} style={styles.searchForm}>
         <input 

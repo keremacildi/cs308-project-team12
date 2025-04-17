@@ -1,0 +1,179 @@
+.cartContainer {
+    padding: 2rem;
+    background-color: #f0f8ff; /* Hafif mavi arka plan */
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+.title {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #1e90ff; /* Mavi başlık */
+    border-bottom: 3px solid #4169e1; /* Koyu mavi alt çizgi */
+    padding-bottom: 0.5rem;
+}
+
+.cartItems {
+    display: grid;
+    gap: 1.25rem;
+}
+
+.cartItem {
+    display: flex;
+    align-items: center;
+    background-color: #ffffff;
+    padding: 1.5rem;
+    border: 1px solid #b0c4de; /* Açık mavi kenar */
+    border-radius: 1rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.cartItem:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    border-color: #1e90ff; /* Hoverda mavi kenar */
+}
+
+.image {
+    width: 100px;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 0.75rem;
+    margin-right: 1.5rem;
+}
+
+.details {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.details h3 {
+    color: #4169e1; /* Koyu mavi başlık */
+    margin: 0;
+}
+
+.details p {
+    color: #333;
+    margin: 0;
+}
+
+.quantityInput {
+    width: 80px;
+    padding: 0.5rem;
+    border: 1px solid #b0c4de; /* Açık mavi kenar */
+    border-radius: 0.5rem;
+    text-align: center;
+    background-color: #f8faff;
+}
+
+.quantityInput:focus {
+    border-color: #1e90ff; /* Odaklandığında mavi kenar */
+    outline: none;
+}
+
+.removeButton {
+    background-color: #ff4040; /* Kırmızı kaldırma butonu */
+    color: white;
+    border: none;
+    padding: 0.75rem 1.25rem;
+    cursor: pointer;
+    border-radius: 0.75rem;
+    transition: all 0.3s ease;
+    font-weight: 700;
+}
+
+.removeButton:hover {
+    background-color: #cc3333;
+    transform: translateY(-2px);
+}
+
+.summary {
+    background-color: #ffffff;
+    padding: 1.5rem;
+    border: 1px solid #b0c4de;
+    border-radius: 1rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    text-align: right;
+}
+
+.summary h2 {
+    color: #1e90ff; /* Mavi toplam fiyat */
+    margin: 0 0 1rem 0;
+}
+
+.clearButton {
+    background-color: #4169e1; /* Koyu mavi temizleme butonu */
+    color: white;
+    border: none;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    border-radius: 0.75rem;
+    transition: all 0.3s ease;
+    font-weight: 700;
+    margin-top: 1rem;
+    display: inline-block;
+}
+
+.clearButton:hover {
+    background-color: #1e90ff; /* Hoverda açık mavi */
+    transform: translateY(-2px);
+}
+
+.checkoutButton {
+    background-color: #1e90ff; /* Mavi checkout butonu */
+    color: white;
+    border: none;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    border-radius: 0.75rem;
+    transition: all 0.3s ease;
+    font-weight: 700;
+    margin-left: 1rem;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.checkoutButton:hover {
+    background-color: #4169e1; /* Hoverda koyu mavi */
+    transform: translateY(-2px);
+}
+
+.emptyMessage {
+    font-size: 1.25rem;
+    color: #666;
+    text-align: center;
+}
+
+.backLink {
+    color: #1e90ff; /* Mavi link */
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.backLink:hover {
+    text-decoration: underline;
+}
+/* ... other styles ... */
+
+.itemSummary {
+    margin-bottom: 1rem;
+  }
+  
+  .itemLine {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #ddd; /* Optional: adds a line between items */
+  }
+  .clickableSection {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+    color: inherit;
+}

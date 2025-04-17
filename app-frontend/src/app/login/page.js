@@ -8,7 +8,7 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
-
+    /*
     const handleLogin = async (e) => {
         e.preventDefault();
         setError("");
@@ -18,7 +18,16 @@ export default function LoginPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password }),
             });
+
             if (res.ok) {
+                const userData = await res.json();
+
+                // 🔒 Kullanıcı bilgilerini localStorage'a kaydet
+                localStorage.setItem("user", JSON.stringify(userData));
+                localStorage.setItem("isLoggedIn", "true");
+
+                // ✔️ Sepet bilgisi zaten localStorage’ta durduğu için ayrıca taşımaya gerek yok
+
                 setSuccess(true);
                 setTimeout(() => (window.location.href = "/"), 2000);
             } else {
@@ -29,6 +38,68 @@ export default function LoginPage() {
             setError("Connection error. Please try again.");
         }
     };
+    */
+    const encryptPassword = (password) => btoa(password);
+    const decryptPassword = (encryptedPassword) => atob(encryptedPassword);
+
+    const handleLogin = (e) => {
+        e.preventDefault();
+        setError("");
+    
+        // 🔐 Simulated test users
+        const users = [
+            {
+                email: "test@example.com",
+                password: encryptPassword("12345678"),
+                address: "123 Main St",
+                name: "Test User",
+                type: "user", // redirect: /profile
+            },
+            {
+                email: "product@example.com",
+                password: encryptPassword("12345678"),
+                address: "123 Main St",
+                name: "Product User",
+                type: "product", // redirect: /admin/product-manager/products
+            },
+            {
+                email: "sales@example.com",
+                password: encryptPassword("12345678"),
+                address: "123 Main St",
+                name: "Sales User",
+                type: "sales", // redirect: /admin/sales-manager/prices
+            },
+        ];
+    
+        // 🔍 Try to match the user
+        const matchedUser = users.find(
+            (u) => u.email === email && decryptPassword(u.password) === password
+        );
+    
+        if (matchedUser) {
+            // Store credentials
+            localStorage.setItem("user", JSON.stringify(matchedUser));
+            localStorage.setItem("isLoggedIn", "true");
+            setSuccess(true);
+    
+            // 🌐 Define redirect path based on role
+            const redirectPaths = {
+                user: "/profile",
+                product: "/admin/product-manager/products",
+                sales: "/admin/sales-manager/prices",
+            };
+    
+            const redirectPath = redirectPaths[matchedUser.type] || "/";
+    
+            // Navigate after short delay
+            setTimeout(() => (window.location.href = redirectPath), 2000);
+        } else {
+            setError("Invalid email or password.");
+        }
+    };
+    
+    
+    
 
     if (success) {
         return (
