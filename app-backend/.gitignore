@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+env/
+venv/
+ENV/
+
+# SQLite database
+*.sqlite3
+
+# Django media/static
+media/
+staticfiles/
+
+# Invoices
+invoices/
+
+# VSCode settings
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Secret keys and configs
+*.env
+.env

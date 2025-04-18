@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manager Orders Dashboard</title>
+</head>
+<body>
+    <h1>Orders for Delivery Processing</h1>
+    {% if orders %}
+        <ul>
+        {% for order in orders %}
+            <li>
+                Order #{{ order.id }} by {{ order.user.username }}<br>
+                Total: ${{ order.total_price }}<br>
+                Status: {{ order.status }}<br>
+                Delivery Address: {{ order.user.profile.home_address|default:"Not provided" }}
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>No orders require delivery processing.</p>
+    {% endif %}
+</body>
+</html>
