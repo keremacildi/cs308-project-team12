@@ -11,6 +11,10 @@ from django.conf import settings
 from django.dispatch import receiver
 from django.contrib.auth.signals import user_logged_in
 from django.contrib.admin.views.decorators import staff_member_required
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.db.models import Avg
+from .models import Product, Comment, Rating
 
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
@@ -278,3 +282,33 @@ def remove_from_wishlist(request, product_id):
 def manager_orders(request):
     orders = Order.objects.filter(status__in=['processing', 'in_transit'])
     return render(request, 'store/manager_orders.html', {'orders': orders})
+
+def api_product_list(request):
+    products = Product.objects.all()
+    data = [
+        {
+            "id": product.id,
+            "name": product.name,
+            "price": product.price,
+            "quantity_in_stock": product.quantity_in_stock,
+            "is_available": product.is_available
+        } for product in products
+    ]
+    return JsonResponse(data, safe=False)
+
+def api_product_detail(request, product_id):
+    product = get_object_or_404(Product, pk=product_id)
+    comments = Comment.objects.filter(product=product, approved=True).values('user__username', 'text', 'created_at')
+    avg_rating = Rating.objects.filter(product=product).aggregate(Avg('score'))['score__avg']
+
+    data = {
+        "id": product.id,
+        "name": product.name,
+        "description": product.description,
+        "price": product.price,
+        "quantity_in_stock": product.quantity_in_stock,
+        "is_available": product.is_available,
+        "avg_rating": avg_rating or 0,
+        "comments": list(comments)
+    }
+    return JsonResponse(data, safe=False)
