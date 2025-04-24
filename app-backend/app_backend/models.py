@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.core.exceptions import ValidationError
 
 class Distributor(models.Model):
     name = models.CharField(max_length=255)
@@ -115,10 +116,30 @@ class PaymentConfirmation(models.Model):
 class ProductReview(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    rating = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
+    rating = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(10)],
+        help_text="Rating between 1 and 10"
+    )
     comment = models.TextField(blank=True, null=True)
     is_approved = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    delivery = models.ForeignKey('Delivery', on_delete=models.CASCADE, null=True, blank=True)
+
+    class Meta:
+        unique_together = ('user', 'product')
+
+    def clean(self):
+        # Check if the user has purchased and received the product
+        if not Delivery.objects.filter(
+            order__user=self.user,
+            order__items__product=self.product,
+            status='delivered'
+        ).exists():
+            raise ValidationError("You can only review products that have been delivered to you.")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Review by {self.user.username} on {self.product.name}"

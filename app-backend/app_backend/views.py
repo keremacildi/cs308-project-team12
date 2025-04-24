@@ -11,12 +11,17 @@ from django.conf import settings
 from django.dispatch import receiver
 from django.contrib.auth.signals import user_logged_in
 from django.contrib.admin.views.decorators import staff_member_required
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
-    Comment, PaymentConfirmation, Delivery, Wishlist
+    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview
 )
 from django.contrib.auth.models import User
+from .serializers import OrderSerializer, ProductReviewSerializer
 
 # --- Home View ---
 def home(request):
@@ -278,3 +283,192 @@ def remove_from_wishlist(request, product_id):
 def manager_orders(request):
     orders = Order.objects.filter(status__in=['processing', 'in_transit'])
     return render(request, 'store/manager_orders.html', {'orders': orders})
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_order(request):
+    try:
+        # Get cart items for the user
+        cart_items = ShoppingCartItem.objects.filter(user=request.user)
+        
+        if not cart_items.exists():
+            return Response({'error': 'Cart is empty'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check stock availability and calculate total price
+        total_price = 0
+        order_items = []
+        
+        for cart_item in cart_items:
+            if cart_item.quantity > cart_item.product.quantity_in_stock:
+                return Response(
+                    {'error': f'Not enough stock for {cart_item.product.name}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            total_price += cart_item.product.price * cart_item.quantity
+            order_items.append({
+                'product': cart_item.product,
+                'quantity': cart_item.quantity,
+                'price_at_purchase': cart_item.product.price
+            })
+        
+        # Create the order
+        order = Order.objects.create(
+            user=request.user,
+            total_price=total_price,
+            status='processing'
+        )
+        
+        # Create order items and reduce stock
+        for item in order_items:
+            OrderItem.objects.create(
+                order=order,
+                product=item['product'],
+                quantity=item['quantity'],
+                price_at_purchase=item['price_at_purchase']
+            )
+            # Reduce stock
+            item['product'].quantity_in_stock -= item['quantity']
+            item['product'].save()
+        
+        # Create delivery record
+        Delivery.objects.create(
+            order=order,
+            delivery_address=request.data.get('delivery_address', ''),
+            status='processing'
+        )
+        
+        # Clear the cart
+        cart_items.delete()
+        
+        return Response({
+            'message': 'Order created successfully',
+            'order_id': order.id
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_history(request):
+    try:
+        orders = Order.objects.filter(user=request.user).prefetch_related(
+            'items__product',
+            'delivery'
+        ).order_by('-created_at')
+        
+        serializer = OrderSerializer(orders, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def submit_review(request, product_id):
+    try:
+        product = Product.objects.get(id=product_id)
+        
+        # Check if the user has purchased and received the product
+        delivery = Delivery.objects.filter(
+            order__user=request.user,
+            order__items__product=product,
+            status='delivered'
+        ).first()
+        
+        if not delivery:
+            return Response(
+                {'error': 'You can only review products that have been delivered to you.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if user has already reviewed this product
+        existing_review = ProductReview.objects.filter(
+            user=request.user,
+            product=product
+        ).first()
+        
+        if existing_review:
+            return Response(
+                {'error': 'You have already reviewed this product.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create the review
+        review = ProductReview.objects.create(
+            user=request.user,
+            product=product,
+            rating=request.data.get('rating'),
+            comment=request.data.get('comment', ''),
+            delivery=delivery,
+            is_approved=False  # Comments need approval, ratings don't
+        )
+        
+        return Response({
+            'message': 'Review submitted successfully',
+            'review_id': review.id
+        }, status=status.HTTP_201_CREATED)
+        
+    except Product.DoesNotExist:
+        return Response(
+            {'error': 'Product not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+def get_product_reviews(request, product_id):
+    try:
+        product = Product.objects.get(id=product_id)
+        reviews = ProductReview.objects.filter(
+            product=product,
+            is_approved=True  # Only show approved reviews
+        ).select_related('user')
+        
+        # Calculate average rating
+        average_rating = reviews.aggregate(Avg('rating'))['rating__avg'] or 0
+        
+        serializer = ProductReviewSerializer(reviews, many=True)
+        
+        return Response({
+            'average_rating': round(average_rating, 1),
+            'total_reviews': reviews.count(),
+            'reviews': serializer.data
+        })
+        
+    except Product.DoesNotExist:
+        return Response(
+            {'error': 'Product not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsStaff])
+def approve_review(request, review_id):
+    try:
+        review = ProductReview.objects.get(id=review_id)
+        review.is_approved = True
+        review.save()
+        
+        return Response({
+            'message': 'Review approved successfully'
+        })
+        
+    except ProductReview.DoesNotExist:
+        return Response(
+            {'error': 'Review not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
