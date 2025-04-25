@@ -22,7 +22,7 @@ from .permissions import IsStaff
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
     Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview,
-    Category, Brand, Seller
+    Category, Brand, Seller, CustomerProfile
 )
 from django.contrib.auth.models import User
 from .serializers import (
@@ -50,19 +50,6 @@ def get_cart_items(request):
         return ShoppingCartItem.objects.filter(session_key=session_key)
 
 # --- Product Listing ---
-def product_list(request):
-    query = request.GET.get('q')
-    sort_by = request.GET.get('sort')
-    products = Product.objects.all()
-    if query:
-        products = products.filter(
-            Q(name__icontains=query) | Q(description__icontains=query)
-        )
-    if sort_by == 'price':
-        products = products.order_by('price')
-    elif sort_by == 'popularity':
-        products = products.order_by('-popularity')
-    return render(request, 'store/product_list.html', {'products': products})
 
 # --- Product Details ---
 def product_detail(request, product_id):
@@ -92,44 +79,7 @@ def remove_from_cart(request, item_id):
     item.delete()
     return redirect('view_cart')
 
-def view_cart(request):
-    items = get_cart_items(request)
-    total = sum(item.product.price * item.quantity for item in items)
-    return render(request, 'store/cart.html', {'cart_items': items, 'total': total})
-
 # --- Checkout Process ---
-@login_required
-def checkout(request):
-    cart_items = get_cart_items(request)
-    if not cart_items:
-        return HttpResponse("Cart is empty.")
-    total_price = sum(item.product.price * item.quantity for item in cart_items)
-    # Decrease stock for each cart item
-    for item in cart_items:
-        if item.product.quantity_in_stock < item.quantity:
-            return HttpResponse(f"Not enough stock for {item.product.name}.", status=400)
-        item.product.quantity_in_stock -= item.quantity
-        item.product.save()
-    order = Order.objects.create(user=request.user, total_price=total_price)
-    for item in cart_items:
-        OrderItem.objects.create(
-            order=order,
-            product=item.product,
-            quantity=item.quantity,
-            price_at_purchase=item.product.price
-        )
-    # Create delivery record with initial status and set delivery address from customer's profile.
-    delivery_address = request.user.profile.home_address if hasattr(request.user, 'profile') else ""
-    Delivery.objects.create(order=order, status='processing', delivery_address=delivery_address)
-    cart_items.delete()
-    PaymentConfirmation.objects.create(order=order, confirmed=True, confirmed_at=timezone.now())
-    pdf_buffer = generate_invoice_pdf(order)
-    order.invoice_pdf.save(
-        f'invoice_order_{order.pk}.pdf',
-        ContentFile(pdf_buffer.getvalue())
-    )
-    send_invoice_email(order)
-    return render(request, 'store/checkout_success.html', {'order': order})
 
 # --- Order History ---
 @login_required
@@ -138,47 +88,6 @@ def order_history(request):
     return render(request, 'store/order_history.html', {'orders': orders})
 
 # --- Rating and Comment Submission ---
-@login_required
-def submit_rating(request, product_id):
-    product = get_object_or_404(Product, id=product_id)
-    # Only allow rating if the product was delivered (i.e. in a delivered order)
-    has_delivered = OrderItem.objects.filter(
-        order__user=request.user,
-        order__status='delivered',
-        product=product
-    ).exists()
-    if not has_delivered:
-        return HttpResponse("You can only rate a delivered product.", status=403)
-    try:
-        score = int(request.POST.get('score', 0))
-    except ValueError:
-        return HttpResponse("Invalid score.", status=400)
-    if not (1 <= score <= 5):
-        return HttpResponse("Invalid score.", status=400)
-    Rating.objects.update_or_create(
-        user=request.user,
-        product=product,
-        defaults={'score': score}
-    )
-    return redirect('product_detail', product_id=product_id)
-
-@login_required
-def submit_comment(request, product_id):
-    product = get_object_or_404(Product, id=product_id)
-    # Only allow comment if the product was delivered
-    has_delivered = OrderItem.objects.filter(
-        order__user=request.user,
-        order__status='delivered',
-        product=product
-    ).exists()
-    if not has_delivered:
-        return HttpResponse("You can only comment on a delivered product.", status=403)
-    text = request.POST.get('text', '')
-    if not text.strip():
-        return HttpResponse("Comment cannot be empty.", status=400)
-    # Comments are created as unapproved by default (awaiting manager approval)
-    Comment.objects.create(user=request.user, product=product, text=text)
-    return redirect('product_detail', product_id=product_id)
 
 # --- PDF Generation and Email Sending ---
 def generate_invoice_pdf(order):
@@ -188,7 +97,7 @@ def generate_invoice_pdf(order):
     p.drawString(100, 780, f"Customer: {order.user.username}")
     y = 750
     for item in order.items.all():
-        p.drawString(100, y, f"{item.product.name} x {item.quantity} - ${item.product.price}")
+        p.drawString(100, y, f"{item.product.title} x {item.quantity} - ${item.product.price}")
         y -= 20
     p.drawString(100, y - 20, f"Total: ${order.total_price}")
     p.showPage()
@@ -225,20 +134,28 @@ def merge_cart(sender, request, user, **kwargs):
             item.save()
 
 # --- Order Cancellation and Refund ---
-@login_required
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def cancel_order(request, order_id):
     order = get_object_or_404(Order, pk=order_id, user=request.user)
     if order.status != 'processing':
-        return HttpResponse("Order cannot be cancelled.", status=403)
+        return Response(
+            {'error': 'Order cannot be cancelled.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     order.status = 'cancelled'
     order.save()
-    return HttpResponse("Order cancelled successfully.")
+    return Response({'message': 'Order cancelled successfully'})
 
-@login_required
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def refund_order(request, order_id):
     order = get_object_or_404(Order, pk=order_id, user=request.user)
     if order.status != 'delivered':
-        return HttpResponse("Order cannot be refunded.", status=403)
+        return Response(
+            {'error': 'Order cannot be refunded.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
     
     refunded_amount = 0
     for item in order.items.all():
@@ -257,37 +174,13 @@ def refund_order(request, order_id):
         settings.DEFAULT_FROM_EMAIL if hasattr(settings, 'DEFAULT_FROM_EMAIL') else 'noreply@example.com',
         [order.user.email]
     )
-    return HttpResponse("Order refunded successfully.")
+    return Response({'message': 'Order refunded successfully'})
 
 # --- Customer Profile ---
-@login_required
-def profile(request):
-    user = request.user
-    profile = user.profile
-    return render(request, 'store/profile.html', {'user': user, 'profile': profile})
 
 # --- Wishlist Management ---
-@login_required
-def add_to_wishlist(request, product_id):
-    product = get_object_or_404(Product, pk=product_id)
-    Wishlist.objects.get_or_create(user=request.user, product=product)
-    return redirect('view_wishlist')
-
-@login_required
-def view_wishlist(request):
-    items = Wishlist.objects.filter(user=request.user)
-    return render(request, 'store/wishlist.html', {'wishlist_items': items})
-
-@login_required
-def remove_from_wishlist(request, product_id):
-    Wishlist.objects.filter(user=request.user, product_id=product_id).delete()
-    return redirect('view_wishlist')
 
 # --- Manager Dashboard ---
-@staff_member_required
-def manager_orders(request):
-    orders = Order.objects.filter(status__in=['processing', 'in_transit'])
-    return render(request, 'store/manager_orders.html', {'orders': orders})
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -314,7 +207,7 @@ def create_order(request):
                     product = Product.objects.get(id=item['product'])
                     if item['quantity'] > product.quantity_in_stock:
                         return Response(
-                            {'error': f'Not enough stock for {product.name}'},
+                            {'error': f'Not enough stock for {product.title}'},
                             status=status.HTTP_400_BAD_REQUEST
                         )
                 except Product.DoesNotExist:
@@ -335,7 +228,7 @@ def create_order(request):
             for cart_item in cart_items:
                 if cart_item.quantity > cart_item.product.quantity_in_stock:
                     return Response(
-                        {'error': f'Not enough stock for {cart_item.product.name}'},
+                        {'error': f'Not enough stock for {cart_item.product.title}'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 total_price += cart_item.product.price * cart_item.quantity
@@ -1023,52 +916,6 @@ def wishlist_view(request):
         )
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def add_to_wishlist(request, product_id):
-    try:
-        product = get_object_or_404(Product, id=product_id)
-        
-        # Check if already in wishlist
-        if Wishlist.objects.filter(user=request.user, product=product).exists():
-            return Response(
-                {'error': 'Product already in wishlist'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Add to wishlist
-        wishlist_item = Wishlist.objects.create(
-            user=request.user,
-            product=product
-        )
-        
-        serializer = WishlistSerializer(wishlist_item)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def remove_from_wishlist(request, product_id):
-    try:
-        wishlist_item = get_object_or_404(
-            Wishlist,
-            user=request.user,
-            product_id=product_id
-        )
-        wishlist_item.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['POST'])
 @permission_classes([AllowAny])
 def register_api(request):
     """
@@ -1217,3 +1064,61 @@ def check_auth(request):
     return Response({
         'authenticated': False
     })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_to_wishlist(request, product_id):
+    """
+    Add a product to the user's wishlist
+    """
+    try:
+        product = get_object_or_404(Product, id=product_id)
+        
+        # Check if product is already in wishlist
+        wishlist_item, created = Wishlist.objects.get_or_create(
+            user=request.user,
+            product=product
+        )
+        
+        if created:
+            return Response({
+                'message': 'Product added to wishlist'
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'message': 'Product already in wishlist'
+            })
+            
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def remove_from_wishlist(request, product_id):
+    """
+    Remove a product from the user's wishlist
+    """
+    try:
+        wishlist_item = get_object_or_404(
+            Wishlist, 
+            user=request.user,
+            product_id=product_id
+        )
+        
+        wishlist_item.delete()
+        return Response({
+            'message': 'Product removed from wishlist'
+        }, status=status.HTTP_200_OK)
+            
+    except Wishlist.DoesNotExist:
+        return Response({
+            'error': 'Product not in wishlist'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
