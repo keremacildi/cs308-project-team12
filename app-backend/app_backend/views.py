@@ -28,7 +28,8 @@ from django.contrib.auth.models import User
 from .serializers import (
     OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer,
     ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer,
-    CategorySerializer, BrandSerializer, SellerSerializer
+    CategorySerializer, BrandSerializer, SellerSerializer, UserCreateSerializer,
+    UserSerializer, UserUpdateSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
@@ -691,13 +692,13 @@ def login_api(request):
         from django.middleware.csrf import get_token
         csrf_token = get_token(request)
         
+        # Get user data using UserSerializer
+        user_serializer = UserSerializer(user)
+        
         # Return user data and CSRF token
         response = Response({
-            'id': user.id,
-            'email': user.email,
-            'username': user.username,
-            'is_staff': user.is_staff,
-            'message': 'Login successful'
+            'message': 'Login successful',
+            'user': user_serializer.data
         })
         
         # Set CSRF cookie
@@ -1076,52 +1077,88 @@ def register_api(request):
     {
         "username": "string",
         "email": "string",
-        "password": "string"
+        "password": "string",
+        "confirm_password": "string",
+        "first_name": "string",
+        "last_name": "string",
+        "profile": {
+            "home_address": "string",
+            "role": "customer"
+        }
     }
     """
-    username = request.data.get('username')
-    email = request.data.get('email')
-    password = request.data.get('password')
-
-    # Validate required fields
-    if not all([username, email, password]):
-        return Response({
-            'error': 'Please provide username, email and password'
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-    # Check if username already exists
-    if User.objects.filter(username=username).exists():
-        return Response({
-            'error': 'Username already exists'
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-    # Check if email already exists
-    if User.objects.filter(email=email).exists():
-        return Response({
-            'error': 'Email already exists'
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        # Create new user
-        user = User.objects.create_user(
-            username=username,
-            email=email,
-            password=password
-        )
-
+    serializer = UserCreateSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.save()
+        # Create a UserSerializer instance to return the user data
+        user_serializer = UserSerializer(user)
         return Response({
             'message': 'User registered successfully',
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email
-            }
+            'user': user_serializer.data
         }, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    except Exception as e:
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    """
+    GET: Get the user's profile
+    PUT: Update the user's profile
+    """
+    user = request.user
+    
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+        
+    elif request.method == 'PUT':
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(UserSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """
+    Change the user's password
+    Expects:
+    {
+        "old_password": "string",
+        "new_password": "string",
+        "confirm_password": "string"
+    }
+    """
+    user = request.user
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
+    
+    # Validate input
+    if not old_password or not new_password or not confirm_password:
         return Response({
-            'error': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            'error': 'All fields are required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    if new_password != confirm_password:
+        return Response({
+            'error': 'New passwords do not match'
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    # Check old password
+    if not user.check_password(old_password):
+        return Response({
+            'error': 'Current password is incorrect'
+        }, status=status.HTTP_400_BAD_REQUEST)
+        
+    # Set new password
+    user.set_password(new_password)
+    user.save()
+    
+    return Response({
+        'message': 'Password changed successfully'
+    })
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -1152,3 +1189,31 @@ def get_sellers(request):
     sellers = Seller.objects.all()
     serializer = SellerSerializer(sellers, many=True)
     return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_api(request):
+    """
+    Logout the current user
+    """
+    from django.contrib.auth import logout
+    logout(request)
+    return Response({
+        'message': 'Logged out successfully'
+    })
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def check_auth(request):
+    """
+    Check if the user is authenticated
+    """
+    if request.user.is_authenticated:
+        serializer = UserSerializer(request.user)
+        return Response({
+            'authenticated': True,
+            'user': serializer.data
+        })
+    return Response({
+        'authenticated': False
+    })

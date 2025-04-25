@@ -50,9 +50,13 @@ urlpatterns = [
     path('api/orders/<int:order_id>/cancel/', views.cancel_order, name='api_cancel_order'),
     # Auth
     path('api/auth/login/', views.login_api, name='api_login'),
+    path('api/auth/logout/', views.logout_api, name='api_logout'),
     path('api/auth/register/', views.register_api, name='api_register'),
     path('api/auth/forgot-password/', views.forgot_password, name='api_forgot_password'),
     path('api/auth/reset-password/', views.reset_password, name='api_reset_password'),
+    path('api/auth/profile/', views.user_profile, name='api_user_profile'),
+    path('api/auth/change-password/', views.change_password, name='api_change_password'),
+    path('api/auth/check/', views.check_auth, name='api_check_auth'),
     # Search
     path('api/search/', views.search_products, name='api_search'),
     # Admin
