@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path
 from app_backend import views
+from app_backend.views import ProductListAPIView, ProductDetailAPIView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -29,8 +30,8 @@ urlpatterns = [
     # Manager dashboard
     path('manager/orders/', views.manager_orders, name='manager_orders'),
     # API endpoints
-    path('api/products/', views.product_list, name='api_product_list'),
-    path('api/products/<int:product_id>/', views.product_detail, name='api_product_detail'),
+    path('api/products/', ProductListAPIView.as_view(), name='api_product_list'),
+    path('api/products/<int:id>/', ProductDetailAPIView.as_view(), name='api_product_detail'),
     path('api/products/<int:product_id>/reviews/', views.get_product_reviews, name='api_product_reviews'),
     path('api/products/<int:product_id>/reviews/create/', views.submit_review, name='api_submit_review'),
     path('api/cart/', views.cart_view, name='api_cart'),
@@ -40,4 +41,16 @@ urlpatterns = [
     path('api/orders/', views.create_order, name='api_create_order'),
     path('api/orders/history/', views.order_history, name='api_order_history'),
     path('api/orders/<int:order_id>/cancel/', views.cancel_order, name='api_cancel_order'),
+    path('api/auth/login/', views.login_api, name='api_login'),
+    path('api/auth/register/', views.register_api, name='api_register'),
+    path('api/auth/forgot-password/', views.forgot_password, name='api_forgot_password'),
+    path('api/auth/reset-password/', views.reset_password, name='api_reset_password'),
+    path('api/search/', views.search_products, name='api_search'),
+    path('api/admin/dashboard/', views.admin_dashboard, name='api_admin_dashboard'),
+    path('api/admin/orders/', views.admin_orders, name='api_admin_orders'),
+    path('api/admin/products/', views.admin_products, name='api_admin_products'),
+    path('api/admin/products/<int:product_id>/', views.admin_products, name='api_admin_product_detail'),
+    path('api/wishlist/', views.wishlist_view, name='api_wishlist'),
+    path('api/wishlist/add/<int:product_id>/', views.add_to_wishlist, name='api_add_to_wishlist'),
+    path('api/wishlist/remove/<int:product_id>/', views.remove_from_wishlist, name='api_remove_from_wishlist'),
 ]

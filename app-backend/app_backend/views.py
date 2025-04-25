@@ -4,7 +4,7 @@ from django.core.mail import EmailMessage, send_mail
 from django.core.files.base import ContentFile
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse
-from django.db.models import Q, Avg
+from django.db.models import Q, Avg, Sum, Count
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.conf import settings
@@ -13,8 +13,10 @@ from django.contrib.auth.signals import user_logged_in
 from django.contrib.admin.views.decorators import staff_member_required
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
+from rest_framework.views import APIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 from .permissions import IsStaff
 
 from .models import (
@@ -22,7 +24,12 @@ from .models import (
     Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview
 )
 from django.contrib.auth.models import User
-from .serializers import OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer
+from .serializers import (
+    OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer,
+    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer
+)
+from django.utils.crypto import get_random_string
+from datetime import timedelta
 
 # --- Home View ---
 def home(request):
@@ -289,28 +296,57 @@ def manager_orders(request):
 @permission_classes([IsAuthenticated])
 def create_order(request):
     try:
-        # Get cart items for the user
-        cart_items = ShoppingCartItem.objects.filter(user=request.user)
+        print("Received order creation request:", request.data)  # Log the incoming request
         
-        if not cart_items.exists():
-            return Response({'error': 'Cart is empty'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Check stock availability and calculate total price
-        total_price = 0
-        order_items = []
-        
-        for cart_item in cart_items:
-            if cart_item.quantity > cart_item.product.quantity_in_stock:
-                return Response(
-                    {'error': f'Not enough stock for {cart_item.product.name}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            total_price += cart_item.product.price * cart_item.quantity
-            order_items.append({
-                'product': cart_item.product,
-                'quantity': cart_item.quantity,
-                'price_at_purchase': cart_item.product.price
-            })
+        # Get order items either from cart or request data
+        if 'order_items' in request.data:
+            # Direct order creation
+            order_items = request.data['order_items']
+            delivery_address = request.data.get('delivery_address', '')
+            total_price = request.data.get('total_price', 0)
+            
+            print("Processing direct order with items:", order_items)  # Log order items
+            
+            # Validate order items
+            if not order_items or len(order_items) == 0:
+                return Response({'error': 'Order items are required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Check stock availability
+            for item in order_items:
+                try:
+                    product = Product.objects.get(id=item['product'])
+                    if item['quantity'] > product.quantity_in_stock:
+                        return Response(
+                            {'error': f'Not enough stock for {product.name}'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                except Product.DoesNotExist:
+                    return Response(
+                        {'error': f'Product with ID {item["product"]} not found'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        else:
+            # Cart-based order creation
+            cart_items = ShoppingCartItem.objects.filter(user=request.user)
+            if not cart_items.exists():
+                return Response({'error': 'Cart is empty'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            order_items = []
+            total_price = 0
+            delivery_address = request.data.get('delivery_address', '')
+            
+            for cart_item in cart_items:
+                if cart_item.quantity > cart_item.product.quantity_in_stock:
+                    return Response(
+                        {'error': f'Not enough stock for {cart_item.product.name}'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                total_price += cart_item.product.price * cart_item.quantity
+                order_items.append({
+                    'product': cart_item.product.id,
+                    'quantity': cart_item.quantity,
+                    'price_at_purchase': cart_item.product.price
+                })
         
         # Create the order
         order = Order.objects.create(
@@ -319,35 +355,50 @@ def create_order(request):
             status='processing'
         )
         
+        print("Created order:", order.id)  # Log order creation
+        
         # Create order items and reduce stock
         for item in order_items:
+            product = Product.objects.get(id=item['product'])
             OrderItem.objects.create(
                 order=order,
-                product=item['product'],
+                product=product,
                 quantity=item['quantity'],
                 price_at_purchase=item['price_at_purchase']
             )
             # Reduce stock
-            item['product'].quantity_in_stock -= item['quantity']
-            item['product'].save()
+            product.quantity_in_stock -= item['quantity']
+            product.save()
+            print(f"Created order item for product {product.id}, reduced stock to {product.quantity_in_stock}")
         
         # Create delivery record
         Delivery.objects.create(
             order=order,
-            delivery_address=request.data.get('delivery_address', ''),
+            delivery_address=delivery_address,
             status='processing'
         )
         
-        # Clear the cart
-        cart_items.delete()
+        # Clear the cart if this was a cart-based order
+        if 'order_items' not in request.data:
+            cart_items.delete()
         
+        # Return detailed order information
         return Response({
-            'message': 'Order created successfully',
-            'order_id': order.id
+            'order': {
+                'id': order.id,
+                'total_price': order.total_price,
+                'status': order.status,
+                'created_at': order.created_at,
+            },
+            'message': 'Order created successfully'
         }, status=status.HTTP_201_CREATED)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        print(f"Order creation error: {str(e)}")  # Add logging
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -423,33 +474,18 @@ def submit_review(request, product_id):
 @api_view(['GET'])
 def get_product_reviews(request, product_id):
     try:
-        product = Product.objects.get(id=product_id)
         reviews = ProductReview.objects.filter(
-            product=product,
-            is_approved=True  # Only show approved reviews
-        ).select_related('user')
-        
-        # Calculate average rating
-        average_rating = reviews.aggregate(Avg('rating'))['rating__avg'] or 0
+            product_id=product_id,
+            is_approved=True
+        ).select_related('user', 'product')
         
         serializer = ProductReviewSerializer(reviews, many=True)
-        
         return Response({
-            'average_rating': round(average_rating, 1),
-            'total_reviews': reviews.count(),
-            'reviews': serializer.data
+            'reviews': serializer.data,
+            'average_rating': reviews.aggregate(Avg('rating'))['rating__avg'] or 0
         })
-        
-    except Product.DoesNotExist:
-        return Response(
-            {'error': 'Product not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
     except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
 @permission_classes([IsStaff])
@@ -545,3 +581,477 @@ def update_cart_item(request, item_id):
         return Response(serializer.data)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# --- API Views ---
+class ProductListAPIView(ListAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = ProductSerializer
+    queryset = Product.objects.all()
+
+    def get_queryset(self):
+        queryset = Product.objects.all()
+        query = self.request.query_params.get('q', None)
+        sort_by = self.request.query_params.get('sort', None)
+        
+        if query:
+            queryset = queryset.filter(
+                Q(name__icontains=query) | Q(description__icontains=query)
+            )
+        
+        if sort_by == 'price':
+            queryset = queryset.order_by('price')
+        elif sort_by == 'popularity':
+            queryset = queryset.order_by('-popularity')
+            
+        return queryset
+
+class ProductDetailAPIView(RetrieveAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = ProductSerializer
+    queryset = Product.objects.all()
+    lookup_field = 'id'
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_api(request):
+    try:
+        email = request.data.get('email')
+        password = request.data.get('password')
+        
+        if not email or not password:
+            return Response(
+                {'error': 'Please provide both email and password'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Try to get user by email
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Invalid credentials'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Check password
+        if not user.check_password(password):
+            return Response(
+                {'error': 'Invalid credentials'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Login the user
+        from django.contrib.auth import login
+        login(request, user)
+        
+        # Get CSRF token
+        from django.middleware.csrf import get_token
+        csrf_token = get_token(request)
+        
+        # Return user data and CSRF token
+        response = Response({
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'is_staff': user.is_staff,
+            'message': 'Login successful'
+        })
+        
+        # Set CSRF cookie
+        response.set_cookie(
+            'csrftoken',
+            csrf_token,
+            httponly=False,
+            samesite='Lax',
+            secure=False
+        )
+        
+        return response
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def search_products(request):
+    try:
+        # Get query parameters
+        query = request.query_params.get('q', '')
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+        min_price = request.query_params.get('min_price')
+        max_price = request.query_params.get('max_price')
+        category = request.query_params.get('category')
+        sort_by = request.query_params.get('sort', 'relevance')
+
+        # Start with base queryset
+        products = Product.objects.all()
+
+        # Apply search query
+        if query:
+            products = products.filter(
+                Q(name__icontains=query) |
+                Q(description__icontains=query) |
+                Q(category__name__icontains=query)
+            )
+
+        # Apply price filters
+        if min_price:
+            products = products.filter(price__gte=float(min_price))
+        if max_price:
+            products = products.filter(price__lte=float(max_price))
+
+        # Apply category filter
+        if category:
+            products = products.filter(category__name=category)
+
+        # Apply sorting
+        if sort_by == 'price_low':
+            products = products.order_by('price')
+        elif sort_by == 'price_high':
+            products = products.order_by('-price')
+        elif sort_by == 'popularity':
+            products = products.order_by('-popularity')
+        elif sort_by == 'newest':
+            products = products.order_by('-created_at')
+
+        # Calculate pagination
+        total_products = products.count()
+        total_pages = (total_products + page_size - 1) // page_size
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        # Get paginated results
+        paginated_products = products[start:end]
+
+        # Serialize results
+        serializer = ProductSerializer(paginated_products, many=True)
+
+        return Response({
+            'products': serializer.data,
+            'pagination': {
+                'total': total_products,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': total_pages
+            },
+            'filters': {
+                'query': query,
+                'min_price': min_price,
+                'max_price': max_price,
+                'category': category,
+                'sort_by': sort_by
+            }
+        })
+
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password(request):
+    try:
+        email = request.data.get('email')
+        if not email:
+            return Response(
+                {'error': 'Email is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Generate reset token
+        token = get_random_string(length=32)
+        user.reset_token = token
+        user.reset_token_expires = timezone.now() + timedelta(hours=1)
+        user.save()
+
+        # Send reset email
+        reset_url = f"{request.build_absolute_uri('/')}reset-password?token={token}"
+        send_mail(
+            'Password Reset Request',
+            f'Click the following link to reset your password: {reset_url}',
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+            fail_silently=False,
+        )
+
+        return Response({
+            'message': 'Password reset email sent successfully'
+        })
+
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password(request):
+    try:
+        token = request.data.get('token')
+        new_password = request.data.get('new_password')
+        
+        if not token or not new_password:
+            return Response(
+                {'error': 'Token and new password are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(reset_token=token)
+            if user.reset_token_expires < timezone.now():
+                return Response(
+                    {'error': 'Reset token has expired'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Invalid reset token'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update password
+        user.set_password(new_password)
+        user.reset_token = None
+        user.reset_token_expires = None
+        user.save()
+
+        return Response({
+            'message': 'Password reset successfully'
+        })
+
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsStaff])
+def admin_dashboard(request):
+    try:
+        # Get recent orders
+        recent_orders = Order.objects.select_related('user').order_by('-created_at')[:10]
+        
+        # Get sales statistics
+        total_sales = Order.objects.filter(
+            status='delivered',
+            created_at__gte=timezone.now() - timedelta(days=30)
+        ).aggregate(total=Sum('total_price'))['total'] or 0
+        
+        # Get product statistics
+        product_stats = Product.objects.aggregate(
+            total_products=Count('id'),
+            low_stock=Count('id', filter=Q(quantity_in_stock__lt=10))
+        )
+        
+        # Get recent reviews
+        recent_reviews = ProductReview.objects.select_related(
+            'user', 'product'
+        ).order_by('-created_at')[:5]
+        
+        return Response({
+            'recent_orders': OrderSerializer(recent_orders, many=True).data,
+            'sales': {
+                'total_last_30_days': total_sales,
+                'total_orders': Order.objects.count(),
+                'pending_orders': Order.objects.filter(status='processing').count()
+            },
+            'products': {
+                'total': product_stats['total_products'],
+                'low_stock': product_stats['low_stock']
+            },
+            'recent_reviews': ProductReviewSerializer(recent_reviews, many=True).data
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsStaff])
+def admin_orders(request):
+    try:
+        status_filter = request.query_params.get('status')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        
+        orders = Order.objects.select_related('user').all()
+        
+        if status_filter:
+            orders = orders.filter(status=status_filter)
+        if date_from:
+            orders = orders.filter(created_at__gte=date_from)
+        if date_to:
+            orders = orders.filter(created_at__lte=date_to)
+            
+        serializer = OrderSerializer(orders, many=True)
+        return Response(serializer.data)
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsStaff])
+def admin_products(request, product_id=None):
+    try:
+        if request.method == 'GET':
+            if product_id:
+                product = get_object_or_404(Product, id=product_id)
+                serializer = ProductSerializer(product)
+            else:
+                products = Product.objects.all()
+                serializer = ProductSerializer(products, many=True)
+            return Response(serializer.data)
+            
+        elif request.method == 'PUT':
+            product = get_object_or_404(Product, id=product_id)
+            serializer = ProductSerializer(product, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def wishlist_view(request):
+    try:
+        wishlist_items = Wishlist.objects.filter(
+            user=request.user
+        ).select_related('product')
+        
+        serializer = WishlistSerializer(wishlist_items, many=True)
+        return Response(serializer.data)
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_to_wishlist(request, product_id):
+    try:
+        product = get_object_or_404(Product, id=product_id)
+        
+        # Check if already in wishlist
+        if Wishlist.objects.filter(user=request.user, product=product).exists():
+            return Response(
+                {'error': 'Product already in wishlist'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Add to wishlist
+        wishlist_item = Wishlist.objects.create(
+            user=request.user,
+            product=product
+        )
+        
+        serializer = WishlistSerializer(wishlist_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def remove_from_wishlist(request, product_id):
+    try:
+        wishlist_item = get_object_or_404(
+            Wishlist,
+            user=request.user,
+            product_id=product_id
+        )
+        wishlist_item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_api(request):
+    """
+    API endpoint for user registration.
+    Expects:
+    {
+        "username": "string",
+        "email": "string",
+        "password": "string"
+    }
+    """
+    username = request.data.get('username')
+    email = request.data.get('email')
+    password = request.data.get('password')
+
+    # Validate required fields
+    if not all([username, email, password]):
+        return Response({
+            'error': 'Please provide username, email and password'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if username already exists
+    if User.objects.filter(username=username).exists():
+        return Response({
+            'error': 'Username already exists'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if email already exists
+    if User.objects.filter(email=email).exists():
+        return Response({
+            'error': 'Email already exists'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        # Create new user
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password
+        )
+
+        return Response({
+            'message': 'User registered successfully',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email
+            }
+        }, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        return Response({
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

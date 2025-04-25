@@ -1,54 +1,70 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
 export async function POST(request) {
-    const session = await getServerSession(authOptions);
-    
-    if (!session) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     try {
         const body = await request.json();
-        const { items, total } = body;
+        console.log('Received request body:', body);
+        
+        const { delivery_address, items, total } = body;
 
-        // Create order in backend
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
+        if (!delivery_address) {
+            return NextResponse.json(
+                { error: 'Delivery address is required' },
+                { status: 400 }
+            );
+        }
+
+        if (!items || items.length === 0) {
+            return NextResponse.json(
+                { error: 'Order items are required' },
+                { status: 400 }
+            );
+        }
+
+        // Transform items to match backend format
+        const order_items = items.map(item => ({
+            product: item.id,
+            quantity: item.quantity,
+            price_at_purchase: item.price
+        }));
+
+        // Log the data being sent to backend
+        const backendData = {
+            delivery_address,
+            order_items,
+            total_price: total
+        };
+        console.log('Sending to backend:', backendData);
+
+        const response = await fetch('http://localhost:8000/api/orders/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.accessToken}`,
+                'Accept': 'application/json',
             },
-            body: JSON.stringify({
-                items,
-                total,
-                user: session.user.id,
-            }),
+            credentials: 'include',
+            body: JSON.stringify(backendData),
         });
 
+        console.log('Backend response status:', response.status);
+        
         if (!response.ok) {
-            throw new Error('Failed to create order');
+            const errorData = await response.json();
+            console.error('Backend error response:', errorData);
+            return NextResponse.json(
+                { error: errorData.error || 'Failed to create order' },
+                { status: response.status }
+            );
         }
 
         const data = await response.json();
-
-        // Return order and invoice data
-        return NextResponse.json({
-            order: data.order,
-            invoice: {
-                orderNumber: data.order.id,
-                date: new Date().toISOString(),
-                items: items.map(item => ({
-                    id: item.id,
-                    title: item.title,
-                    price: item.price,
-                    quantity: item.quantity,
-                })),
-                total: total,
-            },
-        });
+        console.log('Order created successfully:', data);
+        return NextResponse.json(data, { status: 201 });
     } catch (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        console.error('Error creating order:', error);
+        return NextResponse.json(
+            { error: 'Internal server error' },
+            { status: 500 }
+        );
     }
 } 

@@ -123,16 +123,15 @@ class ProductReview(models.Model):
     comment = models.TextField(blank=True, null=True)
     is_approved = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    delivery = models.ForeignKey('Delivery', on_delete=models.CASCADE, null=True, blank=True)
 
     class Meta:
         unique_together = ('user', 'product')
 
     def clean(self):
         # Check if the user has purchased and received the product
-        if not Delivery.objects.filter(
-            order__user=self.user,
-            order__items__product=self.product,
+        if not Order.objects.filter(
+            user=self.user,
+            items__product=self.product,
             status='delivered'
         ).exists():
             raise ValidationError("You can only review products that have been delivered to you.")

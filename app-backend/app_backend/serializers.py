@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Product, Distributor, Category,
     ShoppingCartItem, Order, OrderItem,
-    Rating, Comment, ProductReview
+    Rating, Comment, ProductReview, Wishlist
 )
 from django.contrib.auth.models import User
 
@@ -86,3 +86,12 @@ class ProductReviewSerializer(serializers.ModelSerializer):
         model = ProductReview
         fields = ['id', 'user', 'product', 'rating', 'comment', 'is_approved', 'created_at']
         read_only_fields = ['user', 'is_approved', 'created_at']
+
+
+class WishlistSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+
+    class Meta:
+        model = Wishlist
+        fields = ['id', 'product', 'created_at']
+        read_only_fields = ['created_at']
