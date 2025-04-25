@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import WishlistItem from "../../components/WishlistItem";
-import styles from "../../styles/wishlist.module.css";
 
 export default function WishlistPage() {
     const [wishlist, setWishlist] = useState([]);
@@ -50,15 +49,15 @@ export default function WishlistPage() {
     };
 
     if (loading) {
-        return <div className={styles.wishlistContainer}>Loading...</div>;
+        return <div className="p-8 bg-[#f0f8ff] min-h-screen flex flex-col items-center gap-6">Loading...</div>;
     }
 
     return (
-        <div className={styles.wishlistContainer}>
-            <h1 className={styles.title}>My Wishlist</h1>
+        <div className="p-8 bg-[#f0f8ff] min-h-screen flex flex-col items-center gap-6">
+            <h1 className="text-4xl font-extrabold text-[#1e90ff] mb-4 uppercase tracking-tight border-b-[3px] border-[#4169e1] pb-2">My Wishlist</h1>
 
             {discountNotification && (
-                <div className={styles.discountNotification}>
+                <div className="bg-[#e6f0ff] border border-[#1e90ff] rounded-xl p-4 mb-4 text-[#4169e1] font-semibold text-center">
                     <p>
                         🎉 <strong>{discountNotification.title}</strong> is now on a {discountNotification.discount}% discount!
                     </p>
@@ -66,14 +65,14 @@ export default function WishlistPage() {
             )}
 
             {wishlist.length === 0 ? (
-                <div className={styles.emptyContainer}>
-                    <p className={styles.emptyMessage}>Your wishlist is empty.</p>
-                    <Link href="/products" className={styles.backLink}>
+                <div className="text-center mt-8">
+                    <p className="text-xl text-gray-600 italic mb-4">Your wishlist is empty.</p>
+                    <Link href="/products" className="text-[#1e90ff] no-underline font-semibold hover:underline">
                         Continue Shopping
                     </Link>
                 </div>
             ) : (
-                <div className={styles.wishlistGrid}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full max-w-[1400px]">
                     {wishlist.map((item) => (
                         <WishlistItem
                             key={item.id}

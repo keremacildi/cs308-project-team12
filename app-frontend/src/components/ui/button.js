@@ -1,16 +1,29 @@
-const Button = ({ children, onClick, className = "", disabled = false, type = "button" }) => {
-  return (
-      <button
-          type={type}
-          onClick={onClick}
-          disabled={disabled}
-          className={`px-4 py-2 rounded-lg text-white font-medium transition 
-              ${disabled ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"} 
-              ${className}`}
-      >
-          {children}
-      </button>
-  );
-};
+export function Button({ 
+  children, 
+  variant = 'primary', 
+  size = 'medium', 
+  className = '', 
+  ...props 
+}) {
+  const variants = {
+    primary: 'bg-primary text-white hover:bg-blue-600',
+    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
+    outline: 'border border-primary text-primary hover:bg-blue-50',
+    ghost: 'text-primary hover:bg-blue-50',
+  };
 
-export { Button };
+  const sizes = {
+    small: 'text-sm px-3 py-1',
+    medium: 'px-4 py-2',
+    large: 'text-lg px-6 py-3',
+  };
+
+  return (
+    <button
+      className={`rounded font-medium transition-colors ${variants[variant]} ${sizes[size]} ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
