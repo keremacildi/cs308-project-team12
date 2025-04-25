@@ -25,13 +25,25 @@ class ProductSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
     is_available = serializers.BooleanField(read_only=True)
     average_rating = serializers.FloatField(read_only=True)
+    distributor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Distributor.objects.all(),
+        source='distributor',
+        write_only=True
+    )
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+        write_only=True,
+        required=False
+    )
 
     class Meta:
         model = Product
         fields = [
             'id', 'name', 'model', 'serial_number', 'description',
             'quantity_in_stock', 'price', 'warranty_status',
-            'distributor', 'category', 'popularity', 'is_available', 'average_rating'
+            'distributor', 'category', 'popularity', 'is_available',
+            'average_rating', 'distributor_id', 'category_id'
         ]
 
 
