@@ -1,0 +1,103 @@
+.authContainer {
+  min-height: 100vh;
+  background-image: linear-gradient(to bottom right, #4361ee, #3a0ca3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.authBox {
+  width: 100%;
+  max-width: 420px;
+  backdrop-filter: blur(16px);
+  background-color: rgba(255, 255, 255, 0.9);
+  border-radius: 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 2rem;
+  transition: all 0.3s;
+}
+
+.authTitle {
+  font-size: 1.875rem;
+  font-weight: 800;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.authSuccess {
+  font-size: 1.875rem;
+  font-weight: 800;
+  color: #059669;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.errorText {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background-color: #fee2e2;
+  color: #dc2626;
+  animation: shake 0.5s ease-in-out;
+}
+
+.inputField {
+  width: 100%;
+  padding: 1rem;
+  border: none;
+  border-radius: 0.75rem;
+  margin-bottom: 1rem;
+  background-color: #f3f4f6;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.inputField:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #4361ee;
+}
+
+.formActions {
+  margin-top: 1.5rem;
+}
+
+.submitButton {
+  width: 100%;
+  padding: 1rem;
+  background-image: linear-gradient(to right, #4361ee, #3a0ca3);
+  color: white;
+  font-weight: 500;
+  border: none;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.submitButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.footerText {
+  margin-top: 2rem;
+  text-align: center;
+  color: #4b5563;
+}
+
+.linkText {
+  color: #4361ee;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.linkText:hover {
+  text-decoration: underline;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+} 

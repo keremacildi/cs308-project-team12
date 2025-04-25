@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import styles from '@/styles/search.module.css';
+import styles from '../../styles/search.module.css';
 
 export default function SearchPage() {
     const router = useRouter();
