@@ -1122,3 +1122,66 @@ def remove_from_wishlist(request, product_id):
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_products_by_category(request, category_id):
+    """
+    Get all products from a specific category
+    """
+    try:
+        # Verify category exists
+        category = get_object_or_404(Category, id=category_id)
+        
+        # Get products in this category
+        products = Product.objects.filter(category=category)
+        
+        # Apply additional filters if provided
+        min_price = request.query_params.get('min_price')
+        if min_price:
+            products = products.filter(price__gte=float(min_price))
+        
+        max_price = request.query_params.get('max_price')
+        if max_price:
+            products = products.filter(price__lte=float(max_price))
+        
+        # Apply sorting
+        sort_by = request.query_params.get('sort', None)
+        if sort_by == 'price_asc':
+            products = products.order_by('price')
+        elif sort_by == 'price_desc':
+            products = products.order_by('-price')
+        elif sort_by == 'popularity':
+            products = products.order_by('-popularity')
+        elif sort_by == 'rating':
+            products = products.order_by('-avg_rating')
+        
+        # Serialize and paginate
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+        
+        total_products = products.count()
+        total_pages = (total_products + page_size - 1) // page_size
+        
+        start_index = (page - 1) * page_size
+        end_index = min(start_index + page_size, total_products)
+        
+        paginated_products = products[start_index:end_index]
+        serializer = ProductSerializer(paginated_products, many=True)
+        
+        return Response({
+            'category': category.name,
+            'products': serializer.data,
+            'pagination': {
+                'total': total_products,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': total_pages
+            }
+        })
+        
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
