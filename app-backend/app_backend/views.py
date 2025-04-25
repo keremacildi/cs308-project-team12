@@ -15,13 +15,14 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
+from .permissions import IsStaff
 
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
     Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview
 )
 from django.contrib.auth.models import User
-from .serializers import OrderSerializer, ProductReviewSerializer
+from .serializers import OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer
 
 # --- Home View ---
 def home(request):
@@ -472,3 +473,75 @@ def approve_review(request, review_id):
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+def cart_view(request):
+    try:
+        cart_items = get_cart_items(request)
+        serializer = ShoppingCartItemSerializer(cart_items, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def add_to_cart(request, product_id):
+    try:
+        product = get_object_or_404(Product, id=product_id)
+        quantity = request.data.get('quantity', 1)
+        
+        if quantity > product.quantity_in_stock:
+            return Response(
+                {'error': 'Not enough stock available'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        cart_item, created = ShoppingCartItem.objects.get_or_create(
+            product=product,
+            user=request.user if request.user.is_authenticated else None,
+            session_key=request.session.session_key if not request.user.is_authenticated else None,
+            defaults={'quantity': quantity}
+        )
+        
+        if not created:
+            cart_item.quantity += quantity
+            cart_item.save()
+        
+        serializer = ShoppingCartItemSerializer(cart_item)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['DELETE'])
+def remove_from_cart(request, item_id):
+    try:
+        cart_item = get_object_or_404(ShoppingCartItem, id=item_id)
+        cart_item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PATCH'])
+def update_cart_item(request, item_id):
+    try:
+        cart_item = get_object_or_404(ShoppingCartItem, id=item_id)
+        quantity = request.data.get('quantity')
+        
+        if quantity is None:
+            return Response(
+                {'error': 'Quantity is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if quantity > cart_item.product.quantity_in_stock:
+            return Response(
+                {'error': 'Not enough stock available'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        cart_item.quantity = quantity
+        cart_item.save()
+        
+        serializer = ShoppingCartItemSerializer(cart_item)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

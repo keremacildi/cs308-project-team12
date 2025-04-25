@@ -15,7 +15,7 @@ ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 # Application definition
 INSTALLED_APPS = [
-    # Django’s default apps for admin/auth/contenttypes/sessions/messages/static
+    # Django's default apps for admin/auth/contenttypes/sessions/messages/static
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -28,6 +28,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',  # Required for sessions/admin
     'django.middleware.common.CommonMiddleware',
@@ -35,6 +36,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',  # Required by admin/auth
     'django.contrib.messages.middleware.MessageMiddleware',      # Required by admin/messages
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'app_backend.middleware.APIErrorMiddleware',
 ]
 
 # Points to your project's root URL configuration file

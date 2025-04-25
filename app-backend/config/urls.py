@@ -28,4 +28,16 @@ urlpatterns = [
     path('wishlist/remove/<int:product_id>/', views.remove_from_wishlist, name='remove_from_wishlist'),
     # Manager dashboard
     path('manager/orders/', views.manager_orders, name='manager_orders'),
+    # API endpoints
+    path('api/products/', views.product_list, name='api_product_list'),
+    path('api/products/<int:product_id>/', views.product_detail, name='api_product_detail'),
+    path('api/products/<int:product_id>/reviews/', views.get_product_reviews, name='api_product_reviews'),
+    path('api/products/<int:product_id>/reviews/create/', views.submit_review, name='api_submit_review'),
+    path('api/cart/', views.cart_view, name='api_cart'),
+    path('api/cart/add/<int:product_id>/', views.add_to_cart, name='api_add_to_cart'),
+    path('api/cart/remove/<int:item_id>/', views.remove_from_cart, name='api_remove_from_cart'),
+    path('api/cart/update/<int:item_id>/', views.update_cart_item, name='api_update_cart_item'),
+    path('api/orders/', views.create_order, name='api_create_order'),
+    path('api/orders/history/', views.order_history, name='api_order_history'),
+    path('api/orders/<int:order_id>/cancel/', views.cancel_order, name='api_cancel_order'),
 ]
