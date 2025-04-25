@@ -9,22 +9,7 @@ export default function Header() {
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    // Replace the URL below with your actual API endpoint
-    const res = await fetch(`/api/search?query=${encodeURIComponent(searchInput)}`);
-    
-    if (res.ok) {
-      const data = await res.json();
-      // Assume your API returns an object with a productId property
-      const productId = data.productId;
-      if (productId) {
-        // Navigate to the dynamic product page
-        router.push(`/products/${productId}`);
-      } else {
-        alert("No product found.");
-      }
-    } else {
-      alert("Error fetching product data.");
-    }
+    router.push(`/search?q=${encodeURIComponent(searchInput)}`);
   };
 
   return (

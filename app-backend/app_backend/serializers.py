@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Product, Distributor, Category,
     ShoppingCartItem, Order, OrderItem,
-    Rating, Comment, ProductReview
+    Rating, Comment, ProductReview, Wishlist
 )
 from django.contrib.auth.models import User
 
@@ -36,13 +36,15 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class ShoppingCartItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)
-    product_id = serializers.PrimaryKeyRelatedField(
-        queryset=Product.objects.all(), source='product', write_only=True
-    )
+    total_price = serializers.SerializerMethodField()
 
     class Meta:
         model = ShoppingCartItem
-        fields = ['id', 'product', 'product_id', 'quantity']
+        fields = ['id', 'product', 'quantity', 'total_price']
+        read_only_fields = ['id', 'product', 'total_price']
+
+    def get_total_price(self, obj):
+        return obj.product.price * obj.quantity
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -84,3 +86,12 @@ class ProductReviewSerializer(serializers.ModelSerializer):
         model = ProductReview
         fields = ['id', 'user', 'product', 'rating', 'comment', 'is_approved', 'created_at']
         read_only_fields = ['user', 'is_approved', 'created_at']
+
+
+class WishlistSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+
+    class Meta:
+        model = Wishlist
+        fields = ['id', 'product', 'created_at']
+        read_only_fields = ['created_at']

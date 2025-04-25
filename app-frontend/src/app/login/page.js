@@ -26,7 +26,7 @@ export default function LoginPage() {
                 localStorage.setItem("user", JSON.stringify(userData));
                 localStorage.setItem("isLoggedIn", "true");
 
-                // ✔️ Sepet bilgisi zaten localStorage’ta durduğu için ayrıca taşımaya gerek yok
+                // ✔️ Sepet bilgisi zaten localStorage'ta durduğu için ayrıca taşımaya gerek yok
 
                 setSuccess(true);
                 setTimeout(() => (window.location.href = "/"), 2000);
@@ -42,59 +42,54 @@ export default function LoginPage() {
     const encryptPassword = (password) => btoa(password);
     const decryptPassword = (encryptedPassword) => atob(encryptedPassword);
 
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
         setError("");
-    
-        // 🔐 Simulated test users
-        const users = [
-            {
-                email: "test@example.com",
-                password: encryptPassword("12345678"),
-                address: "123 Main St",
-                name: "Test User",
-                type: "user", // redirect: /profile
-            },
-            {
-                email: "product@example.com",
-                password: encryptPassword("12345678"),
-                address: "123 Main St",
-                name: "Product User",
-                type: "product", // redirect: /admin/product-manager/products
-            },
-            {
-                email: "sales@example.com",
-                password: encryptPassword("12345678"),
-                address: "123 Main St",
-                name: "Sales User",
-                type: "sales", // redirect: /admin/sales-manager/prices
-            },
-        ];
-    
-        // 🔍 Try to match the user
-        const matchedUser = users.find(
-            (u) => u.email === email && decryptPassword(u.password) === password
-        );
-    
-        if (matchedUser) {
-            // Store credentials
-            localStorage.setItem("user", JSON.stringify(matchedUser));
-            localStorage.setItem("isLoggedIn", "true");
-            setSuccess(true);
-    
-            // 🌐 Define redirect path based on role
-            const redirectPaths = {
-                user: "/profile",
-                product: "/admin/product-manager/products",
-                sales: "/admin/sales-manager/prices",
-            };
-    
-            const redirectPath = redirectPaths[matchedUser.type] || "/";
-    
-            // Navigate after short delay
-            setTimeout(() => (window.location.href = redirectPath), 2000);
-        } else {
-            setError("Invalid email or password.");
+        try {
+            console.log('Attempting login with:', { email, password });
+            
+            // First get CSRF token
+            const csrfResponse = await fetch("http://localhost:8000/api/auth/login/", {
+                method: "GET",
+                credentials: "include",
+            });
+            
+            const res = await fetch("http://localhost:8000/api/auth/login/", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-CSRFToken": document.cookie.split('; ')
+                        .find(row => row.startsWith('csrftoken='))
+                        ?.split('=')[1] || '',
+                },
+                credentials: "include",
+                body: JSON.stringify({ email, password }),
+            });
+
+            console.log('Login response status:', res.status);
+            const data = await res.json();
+            console.log('Login response data:', data);
+
+            if (res.ok) {
+                // Store user data in localStorage and set cookie
+                localStorage.setItem("user", JSON.stringify(data));
+                localStorage.setItem("isLoggedIn", "true");
+                
+                // Set user cookie
+                document.cookie = `user=${JSON.stringify(data)}; path=/; max-age=86400`; // 24 hours
+                
+                setSuccess(true);
+
+                // Redirect based on user type
+                const redirectPath = data.is_staff ? "/admin/dashboard" : "/profile";
+                setTimeout(() => (window.location.href = redirectPath), 2000);
+            } else {
+                setError(data.error || "Login failed. Please check your credentials.");
+            }
+        } catch (err) {
+            console.error('Login error:', err);
+            setError("Connection error. Please try again.");
         }
     };
     
@@ -143,7 +138,7 @@ export default function LoginPage() {
                     </div>
                 </form>
                 <p className={styles.footerText}>
-                    Don’t have an account?{" "}
+                    Don't have an account?{" "}
                     <Link href="/register" className={styles.linkText}>
                         Register
                     </Link>
