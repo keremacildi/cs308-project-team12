@@ -45,13 +45,15 @@ export default function ProductCard({ id, title, price, image, stock, smallImage
           />
           <h3>{title}</h3>
           <p>${price}</p>
-          {stock === 0 && <p style={styles.outOfStock}></p>}
+          <p style={stock > 0 ? styles.inStock : styles.outOfStock}>
+            {stock > 0 ? `${stock} in stock` : 'Out of stock'}
+          </p>
         </div>
       </Link>
       {/* Place action buttons outside the Link so clicks on them won't trigger navigation */}
       <div style={styles.buttonsContainer}>
         <div onClick={(e) => e.stopPropagation()}>
-          <AddToCartButton product={product} />
+          <AddToCartButton product={product} disabled={stock === 0} />
         </div>
         <div onClick={(e) => e.stopPropagation()}>
           <button onClick={handleAddToWishlist} style={styles.wishlistButton}>
@@ -94,6 +96,10 @@ const styles = {
     display: "block",
     marginLeft: "auto",
     marginRight: "auto",
+  },
+  inStock: {
+    color: "green",
+    fontWeight: "bold",
   },
   outOfStock: {
     color: "red",
