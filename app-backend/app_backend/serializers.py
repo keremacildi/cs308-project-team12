@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import (
-    Product, Distributor, Category,
+    Product, Distributor, Category, Brand, Seller,
     ShoppingCartItem, Order, OrderItem,
     Rating, Comment, ProductReview, Wishlist
 )
@@ -19,18 +19,34 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 
+class BrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Brand
+        fields = ['id', 'name']
+
+
+class SellerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Seller
+        fields = ['id', 'name']
+
+
 class ProductSerializer(serializers.ModelSerializer):
     distributor = DistributorSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
+    brand = BrandSerializer(read_only=True)
+    seller = SellerSerializer(read_only=True)
     is_available = serializers.BooleanField(read_only=True)
-    average_rating = serializers.FloatField(read_only=True)
+    stock = serializers.IntegerField(source='quantity_in_stock', read_only=True)
+    rating = serializers.FloatField(source='avg_rating', read_only=True)
 
     class Meta:
         model = Product
         fields = [
-            'id', 'name', 'model', 'serial_number', 'description',
-            'quantity_in_stock', 'price', 'warranty_status',
-            'distributor', 'category', 'popularity', 'is_available', 'average_rating'
+            'id', 'title', 'model', 'serial_number', 'description',
+            'quantity_in_stock', 'stock', 'price', 'warranty_status',
+            'distributor', 'category', 'brand', 'seller', 'popularity',
+            'is_available', 'rating', 'image'
         ]
 
 
@@ -93,5 +109,4 @@ class WishlistSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Wishlist
-        fields = ['id', 'product', 'created_at']
-        read_only_fields = ['created_at']
+        fields = ['id', 'product']
