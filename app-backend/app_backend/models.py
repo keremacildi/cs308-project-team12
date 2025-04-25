@@ -18,9 +18,21 @@ class Category(models.Model):
     def __str__(self):
         return self.name
 
+class Brand(models.Model):
+    name = models.CharField(max_length=100)
+    
+    def __str__(self):
+        return self.name
+
+class Seller(models.Model):
+    name = models.CharField(max_length=100)
+    
+    def __str__(self):
+        return self.name
+
 class Product(models.Model):
     id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=255)
+    title = models.CharField(max_length=255)
     model = models.CharField(max_length=255)
     serial_number = models.CharField(max_length=255, unique=True)
     description = models.TextField()
@@ -30,10 +42,14 @@ class Product(models.Model):
     warranty_status = models.BooleanField(default=False)
     distributor = models.ForeignKey(Distributor, on_delete=models.CASCADE)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True)
+    brand = models.ForeignKey(Brand, on_delete=models.CASCADE, null=True, blank=True)
+    seller = models.ForeignKey(Seller, on_delete=models.CASCADE, null=True, blank=True)
+    image = models.ImageField(upload_to='products/', null=True, blank=True)
     popularity = models.IntegerField(default=0)
+    avg_rating = models.DecimalField(max_digits=3, decimal_places=1, default=0.0, validators=[MinValueValidator(0), MaxValueValidator(5)])
 
     def __str__(self):
-        return f"{self.name} ({self.model})"
+        return f"{self.title} ({self.model})"
 
     def save(self, *args, **kwargs):
         if self.cost is None:
@@ -44,6 +60,10 @@ class Product(models.Model):
     def is_available(self):
         return self.quantity_in_stock > 0
 
+    @property
+    def stock(self):
+        return self.quantity_in_stock
+
 class ShoppingCartItem(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     session_key = models.CharField(max_length=255, null=True, blank=True)
@@ -51,11 +71,12 @@ class ShoppingCartItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
 
     def __str__(self):
-        return f"{self.product.name} x{self.quantity}"
+        return f"{self.product.title} x{self.quantity}"
 
 class Order(models.Model):
     STATUS_CHOICES = [
         ('processing', 'Processing'),
+        ('shipped', 'Shipped'),
         ('in_transit', 'In Transit'),
         ('delivered', 'Delivered'),
         ('cancelled', 'Cancelled'),
@@ -76,16 +97,16 @@ class OrderItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField()
     price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)
-    discounted_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)  # NEW
+    discounted_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.product.name} x{self.quantity}"
+        return f"{self.product.title} x{self.quantity}"
 
 class Rating(models.Model):
     SCORE_CHOICES = [(i, i) for i in range(1, 6)]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='ratings')
     score = models.IntegerField(choices=SCORE_CHOICES)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -93,7 +114,7 @@ class Rating(models.Model):
         unique_together = ('user', 'product')
 
     def __str__(self):
-        return f"{self.user.username} rated {self.product.name} {self.score}/5"
+        return f"{self.user.username} rated {self.product.title} {self.score}/5"
 
 class Comment(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -106,7 +127,7 @@ class Comment(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.user.username} commented on {self.product.name}"
+        return f"{self.user.username} commented on {self.product.title}"
 
 class PaymentConfirmation(models.Model):
     order = models.OneToOneField(Order, on_delete=models.CASCADE)
@@ -128,7 +149,6 @@ class ProductReview(models.Model):
         unique_together = ('user', 'product')
 
     def clean(self):
-        # Check if the user has purchased and received the product
         if not Order.objects.filter(
             user=self.user,
             items__product=self.product,
@@ -141,7 +161,7 @@ class ProductReview(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Review by {self.user.username} on {self.product.name}"
+        return f"Review by {self.user.username} on {self.product.title}"
 
 class Delivery(models.Model):
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='delivery')
@@ -176,7 +196,7 @@ class Wishlist(models.Model):
         unique_together = ('user', 'product')
 
     def __str__(self):
-        return f"{self.user.username} wishes for {self.product.name}"
+        return f"{self.user.username} wishes for {self.product.title}"
 
 @receiver(post_save, sender=User)
 def create_user_profile(sender, instance, created, **kwargs):
