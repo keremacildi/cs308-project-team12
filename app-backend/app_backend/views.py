@@ -21,12 +21,14 @@ from .permissions import IsStaff
 
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
-    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview
+    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview,
+    Category, Brand, Seller
 )
 from django.contrib.auth.models import User
 from .serializers import (
     OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer,
-    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer
+    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer,
+    CategorySerializer, BrandSerializer, SellerSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
@@ -64,14 +66,8 @@ def product_list(request):
 # --- Product Details ---
 def product_detail(request, product_id):
     product = get_object_or_404(Product, pk=product_id)
-    avg_rating = Rating.objects.filter(product=product).aggregate(Avg('score'))['score__avg']
-    # Only approved comments are shown (managerial approval required)
-    comments = Comment.objects.filter(product=product, approved=True)
-    return render(request, 'store/product_detail.html', {
-        'product': product,
-        'avg_rating': avg_rating or 0,
-        'comments': comments
-    })
+    serializer = ProductSerializer(product)
+    return Response(serializer.data)
 
 # --- Cart Operations ---
 def add_to_cart(request, product_id):
@@ -595,7 +591,7 @@ class ProductListAPIView(ListAPIView):
         
         if query:
             queryset = queryset.filter(
-                Q(name__icontains=query) | Q(description__icontains=query)
+                Q(title__icontains=query) | Q(description__icontains=query)
             )
         
         if sort_by == 'price':
@@ -610,6 +606,53 @@ class ProductDetailAPIView(RetrieveAPIView):
     serializer_class = ProductSerializer
     queryset = Product.objects.all()
     lookup_field = 'id'
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_all_products(request):
+    """
+    Get all products with optional filtering and sorting.
+    """
+    products = Product.objects.all()
+    
+    # Apply category filter if provided
+    category = request.query_params.get('category', None)
+    if category:
+        products = products.filter(category__name=category)
+    
+    # Apply brand filter if provided
+    brand = request.query_params.get('brand', None)
+    if brand:
+        products = products.filter(brand__name=brand)
+    
+    # Apply seller filter if provided
+    seller = request.query_params.get('seller', None)
+    if seller:
+        products = products.filter(seller__name=seller)
+    
+    # Apply price range filter if provided
+    min_price = request.query_params.get('min_price', None)
+    if min_price:
+        products = products.filter(price__gte=float(min_price))
+    
+    max_price = request.query_params.get('max_price', None)
+    if max_price:
+        products = products.filter(price__lte=float(max_price))
+    
+    # Apply sorting
+    sort_by = request.query_params.get('sort', None)
+    if sort_by == 'price_asc':
+        products = products.order_by('price')
+    elif sort_by == 'price_desc':
+        products = products.order_by('-price')
+    elif sort_by == 'popularity':
+        products = products.order_by('-popularity')
+    elif sort_by == 'rating':
+        products = products.order_by('-avg_rating')
+    
+    # Serialize and return
+    serializer = ProductSerializer(products, many=True)
+    return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -685,6 +728,8 @@ def search_products(request):
         min_price = request.query_params.get('min_price')
         max_price = request.query_params.get('max_price')
         category = request.query_params.get('category')
+        brand = request.query_params.get('brand')
+        seller = request.query_params.get('seller')
         sort_by = request.query_params.get('sort', 'relevance')
 
         # Start with base queryset
@@ -693,7 +738,7 @@ def search_products(request):
         # Apply search query
         if query:
             products = products.filter(
-                Q(name__icontains=query) |
+                Q(title__icontains=query) |
                 Q(description__icontains=query) |
                 Q(category__name__icontains=query)
             )
@@ -707,6 +752,14 @@ def search_products(request):
         # Apply category filter
         if category:
             products = products.filter(category__name=category)
+            
+        # Apply brand filter
+        if brand:
+            products = products.filter(brand__name=brand)
+            
+        # Apply seller filter
+        if seller:
+            products = products.filter(seller__name=seller)
 
         # Apply sorting
         if sort_by == 'price_low':
@@ -715,8 +768,8 @@ def search_products(request):
             products = products.order_by('-price')
         elif sort_by == 'popularity':
             products = products.order_by('-popularity')
-        elif sort_by == 'newest':
-            products = products.order_by('-created_at')
+        elif sort_by == 'rating':
+            products = products.order_by('-avg_rating')
 
         # Calculate pagination
         total_products = products.count()
@@ -743,6 +796,8 @@ def search_products(request):
                 'min_price': min_price,
                 'max_price': max_price,
                 'category': category,
+                'brand': brand,
+                'seller': seller,
                 'sort_by': sort_by
             }
         })
@@ -910,7 +965,7 @@ def admin_orders(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-@api_view(['GET', 'PUT'])
+@api_view(['GET', 'PUT', 'POST', 'DELETE'])
 @permission_classes([IsStaff])
 def admin_products(request, product_id=None):
     try:
@@ -930,6 +985,18 @@ def admin_products(request, product_id=None):
                 serializer.save()
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        elif request.method == 'POST':
+            serializer = ProductSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        elif request.method == 'DELETE':
+            product = get_object_or_404(Product, id=product_id)
+            product.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
             
     except Exception as e:
         return Response(
@@ -1055,3 +1122,33 @@ def register_api(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_categories(request):
+    """
+    Get all product categories.
+    """
+    categories = Category.objects.all()
+    serializer = CategorySerializer(categories, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_brands(request):
+    """
+    Get all product brands.
+    """
+    brands = Brand.objects.all()
+    serializer = BrandSerializer(brands, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_sellers(request):
+    """
+    Get all product sellers.
+    """
+    sellers = Seller.objects.all()
+    serializer = SellerSerializer(sellers, many=True)
+    return Response(serializer.data)
