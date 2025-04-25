@@ -13,7 +13,7 @@ from django.contrib.auth.signals import user_logged_in
 from django.contrib.admin.views.decorators import staff_member_required
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -21,12 +21,13 @@ from .permissions import IsStaff
 
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
-    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview
+    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview, Category, CustomerProfile
 )
 from django.contrib.auth.models import User
 from .serializers import (
     OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer,
-    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer
+    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer,
+    CategorySerializer, CustomerProfileSerializer, UserSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
@@ -1055,3 +1056,97 @@ def register_api(request):
         return Response({
             'error': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Category APIs
+@api_view(['GET'])
+def category_list(request):
+    categories = Category.objects.all()
+    serializer = CategorySerializer(categories, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+def products_by_category(request, category_id):
+    products = Product.objects.filter(category_id=category_id)
+    serializer = ProductSerializer(products, many=True)
+    return Response(serializer.data)
+
+# Order APIs
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_detail(request, order_id):
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+    serializer = OrderSerializer(order)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_tracking(request, order_id):
+    order = get_object_or_404(Order, id=order_id, user=request.user)
+    delivery = get_object_or_404(Delivery, order=order)
+    serializer = DeliverySerializer(delivery)
+    return Response(serializer.data)
+
+# Profile APIs
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def profile(request):
+    profile = get_object_or_404(CustomerProfile, user=request.user)
+    
+    if request.method == 'GET':
+        serializer = CustomerProfileSerializer(profile)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = CustomerProfileSerializer(profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def profile_addresses(request):
+    profile = get_object_or_404(CustomerProfile, user=request.user)
+    
+    if request.method == 'GET':
+        return Response({'addresses': [profile.home_address] if profile.home_address else []})
+    
+    elif request.method == 'POST':
+        profile.home_address = request.data.get('address')
+        profile.save()
+        return Response({'message': 'Address added successfully'})
+
+# Admin Product APIs
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def admin_create_product(request):
+    serializer = ProductSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['PUT'])
+@permission_classes([IsAdminUser])
+def admin_update_product(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+    serializer = ProductSerializer(product, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def admin_delete_product(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+    product.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+# Admin User Management
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_users(request):
+    users = User.objects.all()
+    serializer = UserSerializer(users, many=True)
+    return Response(serializer.data)

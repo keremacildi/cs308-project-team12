@@ -53,4 +53,19 @@ urlpatterns = [
     path('api/wishlist/', views.wishlist_view, name='api_wishlist'),
     path('api/wishlist/add/<int:product_id>/', views.add_to_wishlist, name='api_add_to_wishlist'),
     path('api/wishlist/remove/<int:product_id>/', views.remove_from_wishlist, name='api_remove_from_wishlist'),
+    # Category APIs
+    path('api/categories/', views.category_list, name='api_category_list'),
+    path('api/products/category/<int:category_id>/', views.products_by_category, name='api_products_by_category'),
+    # Order APIs
+    path('api/orders/<int:order_id>/', views.order_detail, name='api_order_detail'),
+    path('api/orders/<int:order_id>/tracking/', views.order_tracking, name='api_order_tracking'),
+    # Profile APIs
+    path('api/profile/', views.profile, name='api_profile'),
+    path('api/profile/addresses/', views.profile_addresses, name='api_profile_addresses'),
+    # Admin Product APIs
+    path('api/admin/products/create/', views.admin_create_product, name='api_admin_create_product'),
+    path('api/admin/products/<int:product_id>/update/', views.admin_update_product, name='api_admin_update_product'),
+    path('api/admin/products/<int:product_id>/delete/', views.admin_delete_product, name='api_admin_delete_product'),
+    # Admin User Management
+    path('api/admin/users/', views.admin_users, name='api_admin_users'),
 ]

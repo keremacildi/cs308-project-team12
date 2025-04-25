@@ -2,7 +2,8 @@ from rest_framework import serializers
 from .models import (
     Product, Distributor, Category,
     ShoppingCartItem, Order, OrderItem,
-    Rating, Comment, ProductReview, Wishlist
+    Rating, Comment, ProductReview, Wishlist,
+    CustomerProfile
 )
 from django.contrib.auth.models import User
 
@@ -95,3 +96,19 @@ class WishlistSerializer(serializers.ModelSerializer):
         model = Wishlist
         fields = ['id', 'product', 'created_at']
         read_only_fields = ['created_at']
+
+
+class CustomerProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomerProfile
+        fields = ['id', 'user', 'home_address', 'role']
+        read_only_fields = ['id', 'user']
+
+
+class UserSerializer(serializers.ModelSerializer):
+    profile = CustomerProfileSerializer(read_only=True)
+    
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile']
+        read_only_fields = ['id']
