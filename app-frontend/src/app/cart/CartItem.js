@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
+import { getImageUrl } from "../../utils/imageUtils";
 
 export default function CartItem({ item, updateQuantity, removeItem }) {
     return (
@@ -11,7 +12,7 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                     <Link href={`/products/${item.id}`}>
                         <div className="relative w-full h-full">
                             <img
-                                src={item.image}
+                                src={getImageUrl(item.image)}
                                 alt={item.title}
                                 className="object-cover w-full h-full"
                             />
@@ -25,7 +26,7 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                         <h3 className="text-lg font-medium text-gray-900 truncate mb-1">{item.title}</h3>
                     </Link>
                     <p className="text-gray-500 text-sm mb-2">
-                        ${item.price.toFixed(2)} each
+                        ${typeof item.price === 'number' ? item.price.toFixed(2) : item.price} each
                     </p>
                     
                     {/* Stock Information */}
@@ -79,7 +80,7 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                 {/* Price and Actions */}
                 <div className="flex flex-col items-end space-y-3">
                     <span className="text-lg font-medium text-gray-900">
-                        ${(item.price * item.quantity).toFixed(2)}
+                        ${typeof item.price === 'number' ? (item.price * item.quantity).toFixed(2) : (parseFloat(item.price) * item.quantity).toFixed(2)}
                     </span>
                     
                     <button

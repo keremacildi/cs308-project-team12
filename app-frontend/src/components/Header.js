@@ -1,16 +1,38 @@
 "use client";
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, ShoppingCart, Heart, User, Package } from "lucide-react";
+import { ShoppingCart, Heart, User, Package, LogOut, Settings, Truck, DollarSign, Tag, BarChart2 } from "lucide-react";
+import { useState, useEffect } from "react";
 
 export default function Header() {
   const router = useRouter();
-  const [searchInput, setSearchInput] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminRole, setAdminRole] = useState(null);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    router.push(`/search?q=${encodeURIComponent(searchInput)}`);
+  // Check authentication status when component mounts
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const user = localStorage.getItem("user");
+      const admin = localStorage.getItem("admin");
+      const role = localStorage.getItem("adminRole");
+      
+      setIsLoggedIn(!!user);
+      setIsAdmin(!!admin);
+      setAdminRole(role);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem("user");
+      localStorage.removeItem("isLoggedIn");
+      localStorage.removeItem("admin");
+      localStorage.removeItem("adminRole");
+      
+      // Redirect to home page after logout
+      router.push("/");
+    }
   };
 
   return (
@@ -36,49 +58,94 @@ export default function Header() {
             <Heart className="w-4 h-4 mr-1" />
             Wishlist
           </Link>
-          <Link href="/profile" className="text-white hover:text-blue-100 transition font-medium flex items-center">
-            <User className="w-4 h-4 mr-1" />
-            Profile
-          </Link>
-          <Link href="/orders" className="text-white hover:text-blue-100 transition font-medium flex items-center">
-            <Package className="w-4 h-4 mr-1" />
-            Orders
-          </Link>
-          <Link href="/login" className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors">
-            Login
-          </Link>
+          
+          {/* Conditional links based on login status */}
+          {isLoggedIn && !isAdmin && (
+            <>
+              <Link href="/profile" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                <User className="w-4 h-4 mr-1" />
+                Profile
+              </Link>
+              <Link href="/orders" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                <Package className="w-4 h-4 mr-1" />
+                Orders
+              </Link>
+            </>
+          )}
+          
+          {/* Admin-specific links */}
+          {isAdmin && (
+            <>
+              {adminRole === 'product-manager' && (
+                <>
+                  <Link href="/admin/product-manager/products" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                    <Package className="w-4 h-4 mr-1" />
+                    Products
+                  </Link>
+                  <Link href="/admin/product-manager/stocks" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                    <ShoppingCart className="w-4 h-4 mr-1" />
+                    Stock
+                  </Link>
+                  <Link href="/admin/product-manager/deliveries" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                    <Truck className="w-4 h-4 mr-1" />
+                    Deliveries
+                  </Link>
+                </>
+              )}
+              
+              {adminRole === 'sales-manager' && (
+                <>
+                  <Link href="/admin/sales-manager/prices" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                    <DollarSign className="w-4 h-4 mr-1" />
+                    Prices
+                  </Link>
+                  <Link href="/admin/sales-manager/discounts" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                    <Tag className="w-4 h-4 mr-1" />
+                    Discounts
+                  </Link>
+                  <Link href="/admin/sales-manager/profit" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                    <BarChart2 className="w-4 h-4 mr-1" />
+                    Revenue
+                  </Link>
+                </>
+              )}
+            </>
+          )}
+          
+          {/* Login/Logout buttons */}
+          {isLoggedIn || isAdmin ? (
+            <button 
+              onClick={handleLogout}
+              className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors flex items-center"
+            >
+              <LogOut className="w-4 h-4 mr-1" />
+              Logout
+            </button>
+          ) : (
+            <Link href="/login" className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors">
+              Login
+            </Link>
+          )}
         </nav>
         
-        <form onSubmit={handleSearch} className="relative w-full md:w-auto mt-4 md:mt-0 order-3 md:order-2">
-          <div className="relative flex items-center">
-            <input 
-              type="text" 
-              placeholder="Search products..." 
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full md:w-64 bg-white/10 text-white placeholder-blue-100 px-4 py-2 rounded-full border border-blue-400 focus:outline-none focus:ring-2 focus:ring-white"
-            />
-            <button 
-              type="submit" 
-              className="absolute right-2 text-blue-100 hover:text-white transition"
-              aria-label="Search"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-          </div>
-        </form>
-        
         {/* Mobile Navigation */}
-        <div className="flex md:hidden items-center space-x-4 order-2 md:order-3">
+        <div className="flex md:hidden items-center space-x-4 order-2">
           <Link href="/cart" className="text-white" aria-label="Cart">
             <ShoppingCart className="w-6 h-6" />
           </Link>
           <Link href="/wishlist" className="text-white" aria-label="Wishlist">
             <Heart className="w-6 h-6" />
           </Link>
-          <Link href="/profile" className="text-white" aria-label="Profile">
-            <User className="w-6 h-6" />
-          </Link>
+          {isLoggedIn && !isAdmin && (
+            <Link href="/profile" className="text-white" aria-label="Profile">
+              <User className="w-6 h-6" />
+            </Link>
+          )}
+          {isAdmin && (
+            <Link href={adminRole === 'product-manager' ? "/admin/product-manager" : "/admin/sales-manager"} className="text-white" aria-label="Admin">
+              <Settings className="w-6 h-6" />
+            </Link>
+          )}
         </div>
       </div>
       
@@ -86,8 +153,32 @@ export default function Header() {
       <nav className="md:hidden flex overflow-x-auto py-2 px-4 bg-blue-600 space-x-4 whitespace-nowrap">
         <Link href="/" className="text-white text-sm">Home</Link>
         <Link href="/products" className="text-white text-sm">Products</Link>
-        <Link href="/orders" className="text-white text-sm">Orders</Link>
-        <Link href="/login" className="text-white text-sm">Login</Link>
+        
+        {isLoggedIn && !isAdmin && (
+          <Link href="/orders" className="text-white text-sm">Orders</Link>
+        )}
+        
+        {isAdmin && adminRole === 'product-manager' && (
+          <>
+            <Link href="/admin/product-manager/products" className="text-white text-sm">Products</Link>
+            <Link href="/admin/product-manager/stocks" className="text-white text-sm">Stock</Link>
+            <Link href="/admin/product-manager/deliveries" className="text-white text-sm">Deliveries</Link>
+          </>
+        )}
+        
+        {isAdmin && adminRole === 'sales-manager' && (
+          <>
+            <Link href="/admin/sales-manager/prices" className="text-white text-sm">Prices</Link>
+            <Link href="/admin/sales-manager/discounts" className="text-white text-sm">Discounts</Link>
+            <Link href="/admin/sales-manager/profit" className="text-white text-sm">Revenue</Link>
+          </>
+        )}
+        
+        {isLoggedIn || isAdmin ? (
+          <button onClick={handleLogout} className="text-white text-sm">Logout</button>
+        ) : (
+          <Link href="/login" className="text-white text-sm">Login</Link>
+        )}
       </nav>
     </header>
   );

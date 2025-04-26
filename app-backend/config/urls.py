@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.urls import path
 from app_backend import views
 from app_backend.views import ProductListAPIView, ProductDetailAPIView
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -51,9 +53,15 @@ urlpatterns = [
     path('api/admin/orders/', views.admin_orders, name='api_admin_orders'),
     path('api/admin/products/', views.admin_products, name='api_admin_products'),
     path('api/admin/products/<int:product_id>/', views.admin_products, name='api_admin_product_detail'),
+    path('api/admin/categories/', views.admin_categories, name='api_admin_categories'),
+    path('api/admin/categories/<int:category_id>/', views.admin_categories, name='api_admin_category_detail'),
     
     # Wishlist
     path('api/wishlist/', views.wishlist_view, name='api_wishlist'),
     path('api/wishlist/add/<int:product_id>/', views.add_to_wishlist, name='api_add_to_wishlist'),
     path('api/wishlist/remove/<int:product_id>/', views.remove_from_wishlist, name='api_remove_from_wishlist'),
 ]
+
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

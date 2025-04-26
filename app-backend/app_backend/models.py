@@ -4,6 +4,7 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
+from decimal import Decimal
 
 class Distributor(models.Model):
     name = models.CharField(max_length=255)
@@ -52,8 +53,8 @@ class Product(models.Model):
         return f"{self.title} ({self.model})"
 
     def save(self, *args, **kwargs):
-        if self.cost is None:
-            self.cost = self.price * 0.5
+        if self.cost is None and self.price is not None:
+            self.cost = self.price * Decimal('0.5')
         super().save(*args, **kwargs)
 
     @property

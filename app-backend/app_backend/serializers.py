@@ -5,6 +5,7 @@ from .models import (
     Rating, Comment, ProductReview, Wishlist, CustomerProfile
 )
 from django.contrib.auth.models import User
+from decimal import Decimal
 
 
 class DistributorSerializer(serializers.ModelSerializer):
@@ -109,15 +110,55 @@ class ProductSerializer(serializers.ModelSerializer):
     is_available = serializers.BooleanField(read_only=True)
     stock = serializers.IntegerField(source='quantity_in_stock', read_only=True)
     rating = serializers.FloatField(source='avg_rating', read_only=True)
+    
+    distributor_id = serializers.PrimaryKeyRelatedField(
+        queryset=Distributor.objects.all(),
+        source='distributor',
+        write_only=True
+    )
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+        write_only=True,
+        required=False
+    )
+    brand_id = serializers.PrimaryKeyRelatedField(
+        queryset=Brand.objects.all(),
+        source='brand',
+        write_only=True,
+        required=False
+    )
+    seller_id = serializers.PrimaryKeyRelatedField(
+        queryset=Seller.objects.all(),
+        source='seller',
+        write_only=True,
+        required=False
+    )
+    cost = serializers.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = Product
         fields = [
             'id', 'title', 'model', 'serial_number', 'description',
-            'quantity_in_stock', 'stock', 'price', 'warranty_status',
+            'quantity_in_stock', 'stock', 'price', 'cost', 'warranty_status',
             'distributor', 'category', 'brand', 'seller', 'popularity',
-            'is_available', 'rating', 'image'
+            'is_available', 'rating', 'image', 'distributor_id', 'category_id', 
+            'brand_id', 'seller_id'
         ]
+    
+    def create(self, validated_data):
+        # Calculate cost field if price is provided and cost is not
+        if 'price' in validated_data and ('cost' not in validated_data or validated_data['cost'] is None):
+            validated_data['cost'] = validated_data['price'] * Decimal('0.5')
+        
+        # Create the product
+        product = Product.objects.create(**validated_data)
+        return product
 
 
 class ShoppingCartItemSerializer(serializers.ModelSerializer):

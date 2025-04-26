@@ -2,11 +2,41 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import AddToCartButton from "./ui/AddToCartButton";
-import { Heart, ShoppingCart, Check, AlertCircle } from "lucide-react";
+import { Heart, ShoppingCart, Check, AlertCircle, Star, StarHalf } from "lucide-react";
+import { getImageUrl } from "../utils/imageUtils";
 
-export default function ProductCard({ id, title, price, image, stock, smallImage }) {
+// Star Rating Component
+const StarRating = ({ rating }) => {
+  // Convert rating to number and ensure it's between 0-5
+  const ratingValue = Math.min(Math.max(parseFloat(rating) || 0, 0), 5);
+  
+  // Calculate full and half stars
+  const fullStars = Math.floor(ratingValue);
+  const hasHalfStar = ratingValue % 1 >= 0.5;
+  
+  return (
+    <div className="flex items-center">
+      {/* Render full stars */}
+      {[...Array(fullStars)].map((_, i) => (
+        <Star key={`full-${i}`} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+      ))}
+      
+      {/* Render half star if needed */}
+      {hasHalfStar && <StarHalf className="w-4 h-4 fill-yellow-400 text-yellow-400" />}
+      
+      {/* Render empty stars */}
+      {[...Array(5 - fullStars - (hasHalfStar ? 1 : 0))].map((_, i) => (
+        <Star key={`empty-${i}`} className="w-4 h-4 text-gray-300" />
+      ))}
+      
+      <span className="ml-1 text-sm text-gray-600">{ratingValue.toFixed(1)}</span>
+    </div>
+  );
+};
+
+export default function ProductCard({ id, title, price, image, stock, rating = 0, smallImage }) {
   // Create a product object including the stock property
-  const product = { id, title, price, image, stock };
+  const product = { id, title, price, image, stock, rating };
 
   // State for the wishlist button text and action
   const [isInWishlist, setIsInWishlist] = useState(false);
@@ -46,27 +76,36 @@ export default function ProductCard({ id, title, price, image, stock, smallImage
         </div>
       )}
 
-      {/* Discount Tag - Example */}
-      {Math.random() > 0.5 && (
-        <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">
-          SALE
-        </div>
-      )}
+      {/* Discount Tag - Only render on the client side to avoid hydration mismatch */}
+      <div className="absolute top-3 left-3 z-10">
+        {typeof window !== 'undefined' && Math.random() > 0.5 && (
+          <div className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+            SALE
+          </div>
+        )}
+      </div>
 
       {/* Product Image */}
-      <Link href={`/products/${id}`} className="block relative overflow-hidden pt-[75%]">
-        <img 
-          src={image || "/iphone.jpg"} 
-          alt={title}
-          className="absolute top-0 left-0 w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105" 
-        />
-      </Link>
+      <div className="block relative overflow-hidden pt-[75%]">
+        <Link href={`/products/${id}`} className="block absolute inset-0">
+          <img 
+            src={getImageUrl(image)} 
+            alt={title}
+            className="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105" 
+          />
+        </Link>
+        </div>
 
       {/* Product Info */}
       <div className="p-4 flex flex-col flex-grow">
         <Link href={`/products/${id}`} className="hover:text-primary transition">
           <h3 className="text-gray-800 font-medium text-lg mb-1 line-clamp-2">{title}</h3>
-        </Link>
+      </Link>
+        
+        {/* Star Rating */}
+        <div className="mb-2">
+          <StarRating rating={rating} />
+        </div>
         
         <div className="mt-auto pt-4">
           <div className="flex items-center justify-between mb-3">
@@ -97,7 +136,7 @@ export default function ProductCard({ id, title, price, image, stock, smallImage
             >
               <Heart className={`w-4 h-4 ${isInWishlist ? "fill-pink-600 text-pink-600" : ""}`} />
               <span className="text-sm font-medium">Wishlist</span>
-            </button>
+          </button>
           </div>
         </div>
       </div>

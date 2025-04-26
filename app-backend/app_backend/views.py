@@ -3,7 +3,7 @@ from reportlab.pdfgen import canvas
 from django.core.mail import EmailMessage, send_mail
 from django.core.files.base import ContentFile
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse
 from django.db.models import Q, Avg, Sum, Count
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -18,6 +18,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from .permissions import IsStaff
+from django.db import models
 
 from .models import (
     Product, ShoppingCartItem, Order, OrderItem, Rating,
@@ -33,6 +34,7 @@ from .serializers import (
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
+import os
 
 # --- Home View ---
 def home(request):
@@ -615,8 +617,8 @@ def login_api(request):
 @permission_classes([AllowAny])
 def search_products(request):
     try:
-        # Get query parameters
-        query = request.query_params.get('q', '')
+        # Get query parameters with fallbacks
+        query = request.query_params.get('query', '') or request.query_params.get('q', '')
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 10))
         min_price = request.query_params.get('min_price')
@@ -629,12 +631,16 @@ def search_products(request):
         # Start with base queryset
         products = Product.objects.all()
 
-        # Apply search query
+        # Apply search query to multiple fields
         if query:
+            # Using Q objects to create OR conditions
             products = products.filter(
                 Q(title__icontains=query) |
+                Q(model__icontains=query) |
                 Q(description__icontains=query) |
-                Q(category__name__icontains=query)
+                Q(category__name__icontains=query) |
+                Q(brand__name__icontains=query) |
+                Q(seller__name__icontains=query)
             )
 
         # Apply price filters
@@ -655,7 +661,7 @@ def search_products(request):
         if seller:
             products = products.filter(seller__name=seller)
 
-        # Apply sorting
+        # Apply sorting - added more options and improved relevance
         if sort_by == 'price_low':
             products = products.order_by('price')
         elif sort_by == 'price_high':
@@ -664,6 +670,33 @@ def search_products(request):
             products = products.order_by('-popularity')
         elif sort_by == 'rating':
             products = products.order_by('-avg_rating')
+        elif sort_by == 'newest':
+            products = products.order_by('-id')  # Assuming newer products have higher IDs
+        elif sort_by == 'relevance' and query:
+            # For relevance sorting with query, prioritize exact matches in title and model
+            products = products.annotate(
+                title_match=models.Case(
+                    models.When(title__iexact=query, then=models.Value(10)),
+                    models.When(title__istartswith=query, then=models.Value(5)),
+                    models.When(title__icontains=query, then=models.Value(3)),
+                    default=models.Value(0),
+                    output_field=models.IntegerField()
+                ),
+                model_match=models.Case(
+                    models.When(model__iexact=query, then=models.Value(8)),
+                    models.When(model__istartswith=query, then=models.Value(4)),
+                    models.When(model__icontains=query, then=models.Value(2)),
+                    default=models.Value(0),
+                    output_field=models.IntegerField()
+                ),
+                brand_match=models.Case(
+                    models.When(brand__name__iexact=query, then=models.Value(5)),
+                    models.When(brand__name__istartswith=query, then=models.Value(3)),
+                    models.When(brand__name__icontains=query, then=models.Value(1)),
+                    default=models.Value(0),
+                    output_field=models.IntegerField()
+                )
+            ).order_by('-title_match', '-model_match', '-brand_match', '-popularity')
 
         # Calculate pagination
         total_products = products.count()
@@ -874,18 +907,37 @@ def admin_products(request, product_id=None):
             
         elif request.method == 'PUT':
             product = get_object_or_404(Product, id=product_id)
-            serializer = ProductSerializer(product, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Handle form data or JSON data
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                serializer = ProductSerializer(product, data=request.data, partial=True)
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                # Handle JSON data
+                serializer = ProductSerializer(product, data=request.data, partial=True)
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         elif request.method == 'POST':
-            serializer = ProductSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Handle form data or JSON data
+            if request.content_type and 'multipart/form-data' in request.content_type:
+                serializer = ProductSerializer(data=request.data)
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                # Handle JSON data
+                serializer = ProductSerializer(data=request.data)
+                if serializer.is_valid():
+                    serializer.save()
+                    return Response(serializer.data, status=status.HTTP_201_CREATED)
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         elif request.method == 'DELETE':
             product = get_object_or_404(Product, id=product_id)
@@ -1183,5 +1235,75 @@ def get_products_by_category(request, category_id):
     except Exception as e:
         return Response(
             {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+# Media files serving view
+def serve_media_file(request, filename):
+    """
+    Custom view to serve media files directly
+    """
+    # Clean the filename to prevent directory traversal attacks
+    clean_filename = os.path.basename(filename)
+    
+    # Build the full path to the file in the media directory
+    file_path = os.path.join(settings.MEDIA_ROOT, 'products', clean_filename)
+    
+    # Check if the file exists
+    if not os.path.exists(file_path):
+        return HttpResponse("File not found", status=404)
+    
+    # Serve the file directly
+    return FileResponse(open(file_path, 'rb'))
+
+@api_view(['GET', 'PUT', 'POST', 'DELETE'])
+@permission_classes([IsStaff])
+def admin_categories(request, category_id=None):
+    """
+    Admin endpoint for managing categories
+    GET: Retrieve all categories or a specific category
+    POST: Create a new category
+    PUT: Update an existing category
+    DELETE: Remove a category
+    """
+    try:
+        if request.method == 'GET':
+            if category_id:
+                category = get_object_or_404(Category, id=category_id)
+                serializer = CategorySerializer(category)
+            else:
+                categories = Category.objects.all()
+                serializer = CategorySerializer(categories, many=True)
+            return Response(serializer.data)
+            
+        elif request.method == 'POST':
+            serializer = CategorySerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        elif request.method == 'PUT':
+            category = get_object_or_404(Category, id=category_id)
+            serializer = CategorySerializer(category, data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        elif request.method == 'DELETE':
+            category = get_object_or_404(Category, id=category_id)
+            # Check if there are products using this category
+            if Product.objects.filter(category=category).exists():
+                return Response(
+                    {'error': 'Cannot delete category that has products assigned to it'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            category.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+            
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )

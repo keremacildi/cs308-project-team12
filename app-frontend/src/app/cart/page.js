@@ -40,9 +40,12 @@ export default function CartPage() {
         localStorage.removeItem("cart");
     };
 
-    // Total price calculation
+    // Total price calculation - ensure we handle non-number price values
     const totalPrice = cart.reduce(
-        (sum, item) => sum + item.price * item.quantity,
+        (sum, item) => {
+            const itemPrice = typeof item.price === 'number' ? item.price : parseFloat(item.price) || 0;
+            return sum + itemPrice * item.quantity;
+        },
         0
     );
 

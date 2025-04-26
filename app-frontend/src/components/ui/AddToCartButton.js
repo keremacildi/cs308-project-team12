@@ -6,10 +6,16 @@ import { ShoppingCart, Check, AlertTriangle } from "lucide-react";
 export default function AddToCartButton({ product, disabled }) {
   const [buttonState, setButtonState] = useState('idle'); // idle, adding, added, error
   const [quantity, setQuantity] = useState(0);
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Set mounted state on client side
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Check if product exists in cart and update quantity on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (isMounted) {
       try {
         const cart = JSON.parse(localStorage.getItem("cart") || "[]");
         const existingItem = cart.find(item => item.id === product.id);
@@ -20,11 +26,11 @@ export default function AddToCartButton({ product, disabled }) {
         console.error("Error reading cart:", error);
       }
     }
-  }, [product.id]);
+  }, [product.id, isMounted]);
 
   const handleAddToCart = () => {
     // Check if we're in the browser environment
-    if (typeof window === "undefined") return;
+    if (!isMounted) return;
     
     // Prevent adding if out of stock or button disabled
     if (disabled || product.stock === 0) return;

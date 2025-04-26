@@ -21,9 +21,15 @@ export default function HomePage() {
   // Auto-slide state
   const [currentSlide, setCurrentSlide] = useState(0);
   const [autoSlide, setAutoSlide] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   
   // Define how many products per slide (responsive)
   const [itemsPerSlide, setItemsPerSlide] = useState(3);
+  
+  // Set mounted state for client-side only operations
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   // Update items per slide based on window width
   useEffect(() => {
@@ -45,13 +51,13 @@ export default function HomePage() {
   // Auto-slide effect
   useEffect(() => {
     let interval;
-    if (autoSlide) {
+    if (autoSlide && isMounted) {
       interval = setInterval(() => {
         nextSlide();
       }, 5000);
     }
     return () => clearInterval(interval);
-  }, [autoSlide, currentSlide]);
+  }, [autoSlide, currentSlide, isMounted]);
   
   // Create slides based on items per slide
   const totalProducts = sortedProducts.length;
@@ -86,7 +92,7 @@ export default function HomePage() {
   };
 
   // For the categories section: get unique categories
-  const categories = [...new Set(productsArray.map(product => product.category))].slice(0, 3);
+  const categories = ["Laptops", "Smartphones", "Gaming"];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
