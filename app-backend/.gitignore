@@ -12,7 +12,6 @@ ENV/
 *.sqlite3
 
 # Django media/static
-media/
 staticfiles/
 
 # Invoices
