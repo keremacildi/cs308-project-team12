@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { getImageUrl } from "../../utils/imageUtils";
+import apiClient from "../../utils/apiClient";
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -13,6 +14,19 @@ export default function CheckoutPage() {
     const [invoice, setInvoice] = useState(null);
     const [paymentMethod, setPaymentMethod] = useState("credit");
     const [shippingMethod, setShippingMethod] = useState("standard");
+    const [formData, setFormData] = useState({
+        firstName: '',
+        lastName: '',
+        streetAddress: '',
+        city: '',
+        state: '',
+        postalCode: '',
+        cardNumber: '',
+        expirationDate: '',
+        cvc: ''
+    });
+    const [submitLoading, setSubmitLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
     useEffect(() => {
         // Check if user is logged in
@@ -25,44 +39,90 @@ export default function CheckoutPage() {
         setLoading(false);
     }, []);
 
+    const handleFormChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
     const handleCheckout = async (e) => {
         e.preventDefault();
+        setSubmitLoading(true);
+        setErrorMessage('');
+        
+        // Validate required fields
+        if (!formData.firstName || !formData.lastName || !formData.streetAddress || 
+            !formData.city || !formData.state || !formData.postalCode) {
+            setErrorMessage('Please fill in all required shipping information fields');
+            setSubmitLoading(false);
+            return;
+        }
+        
+        // Validate payment information if using credit card
+        if (paymentMethod === 'credit' && (!formData.cardNumber || !formData.expirationDate || !formData.cvc)) {
+            setErrorMessage('Please fill in all payment information fields');
+            setSubmitLoading(false);
+            return;
+        }
         
         try {
-            // Create order
-            const response = await fetch("/api/orders", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    items: cart,
-                    total: calculateTotal(),
-                    paymentMethod,
-                    shippingMethod
-                }),
+            // Prepare order items for API
+            const orderItems = cart.map(item => ({
+                product: item.id,
+                quantity: item.quantity,
+                price_at_purchase: parseFloat(item.price)
+            }));
+            
+            // Gather address
+            const deliveryAddress = `${formData.streetAddress}, ${formData.city}, ${formData.state} ${formData.postalCode}`;
+            
+            // Create order data object
+            const orderData = {
+                order_items: orderItems,
+                total_price: calculateTotal(),
+                delivery_address: deliveryAddress,
+                payment_method: paymentMethod,
+                shipping_method: shippingMethod
+            };
+            
+            console.log('Sending order data:', orderData);
+            
+            // Get user token from localStorage to verify it's available
+            const userInfo = localStorage.getItem('user');
+            const token = localStorage.getItem('token');
+            console.log('User info:', userInfo ? 'Available' : 'Not available');
+            console.log('Auth token:', token ? 'Available' : 'Not available');
+            
+            // Send order to API using apiClient
+            const response = await apiClient.orders.create(orderData);
+            
+            console.log('Order response:', response);
+            
+            // Setup invoice data
+            setInvoice({
+                orderNumber: response.order.id,
+                date: new Date().toISOString(),
+                items: cart,
+                subtotal: calculateSubtotal(),
+                shipping: calculateShipping(),
+                tax: calculateTax(),
+                total: calculateTotal(),
+                deliveryAddress
             });
-
-            if (response.ok) {
-                const data = await response.json();
-                setInvoice({
-                    ...data.invoice,
-                    orderNumber: `ORD-${Date.now()}`,
-                    date: new Date().toISOString(),
-                    items: cart,
-                    total: calculateTotal(),
-                });
-                setOrderComplete(true);
-                
-                // Clear cart after successful order
-                localStorage.removeItem("cart");
-                setCart([]);
-            } else {
-                throw new Error("Failed to create order");
-            }
+            
+            // Mark order as complete
+            setOrderComplete(true);
+            
+            // Clear cart after successful order
+            localStorage.removeItem("cart");
+            setCart([]);
         } catch (error) {
             console.error("Checkout error:", error);
-            alert("Failed to process order. Please try again.");
+            setErrorMessage(error.message || "Failed to process order. Please try again.");
+        } finally {
+            setSubmitLoading(false);
         }
     };
 
@@ -172,6 +232,9 @@ export default function CheckoutPage() {
                                 <p className="text-sm text-gray-600">
                                     <span className="font-medium">Date:</span> {new Date(invoice.date).toLocaleDateString()}
                                 </p>
+                                <p className="text-sm text-gray-600 mt-2">
+                                    <span className="font-medium">Delivery Address:</span> {invoice.deliveryAddress}
+                                </p>
                             </div>
                             
                             <div className="space-y-3 my-6">
@@ -197,15 +260,15 @@ export default function CheckoutPage() {
                             <div className="border-t border-gray-200 pt-4">
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Subtotal</span>
-                                    <span className="text-gray-900">${calculateSubtotal().toFixed(2)}</span>
+                                    <span className="text-gray-900">${invoice.subtotal.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Shipping</span>
-                                    <span className="text-gray-900">${calculateShipping().toFixed(2)}</span>
+                                    <span className="text-gray-900">${invoice.shipping.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Tax</span>
-                                    <span className="text-gray-900">${calculateTax().toFixed(2)}</span>
+                                    <span className="text-gray-900">${invoice.tax.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-4 pt-4 border-t border-gray-200">
                                     <span className="text-lg font-bold text-gray-900">Total</span>
@@ -216,13 +279,39 @@ export default function CheckoutPage() {
                         
                         <p className="text-center text-gray-600 mb-6">A copy of your receipt has been sent to your email.</p>
                         
-                        <div className="flex justify-center">
+                        <div className="flex justify-center space-x-4">
                             <Link 
                                 href="/" 
                                 className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
                             >
                                 Return to Home
                             </Link>
+                            <Link 
+                                href="/orders" 
+                                className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                            >
+                                View My Orders
+                            </Link>
+                        </div>
+                        
+                        <div className="mt-4 flex justify-center">
+                            <button
+                                onClick={() => {
+                                    // Extract the numeric part of the order ID
+                                    let orderId = invoice.orderNumber;
+                                    console.log("Original order ID:", orderId, typeof orderId);
+                                    
+                                    // Don't convert the order ID, send it as is
+                                    // The backend has been updated to handle different formats
+                                    apiClient.orders.downloadInvoice(orderId);
+                                }}
+                                className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Download Invoice
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -242,33 +331,81 @@ export default function CheckoutPage() {
                             
                             <div className="grid grid-cols-6 gap-6">
                                 <div className="col-span-6 sm:col-span-3">
-                                    <label htmlFor="first-name" className="block text-sm font-medium text-gray-700">First name</label>
-                                    <input type="text" name="first-name" id="first-name" autoComplete="given-name" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                    <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">First name</label>
+                                    <input 
+                                        type="text" 
+                                        name="firstName" 
+                                        id="firstName" 
+                                        value={formData.firstName}
+                                        onChange={handleFormChange}
+                                        autoComplete="given-name" 
+                                        className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                    />
                                 </div>
 
                                 <div className="col-span-6 sm:col-span-3">
-                                    <label htmlFor="last-name" className="block text-sm font-medium text-gray-700">Last name</label>
-                                    <input type="text" name="last-name" id="last-name" autoComplete="family-name" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                    <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">Last name</label>
+                                    <input 
+                                        type="text" 
+                                        name="lastName" 
+                                        id="lastName" 
+                                        value={formData.lastName}
+                                        onChange={handleFormChange}
+                                        autoComplete="family-name" 
+                                        className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                    />
                                 </div>
 
                                 <div className="col-span-6">
-                                    <label htmlFor="street-address" className="block text-sm font-medium text-gray-700">Street address</label>
-                                    <input type="text" name="street-address" id="street-address" autoComplete="street-address" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                    <label htmlFor="streetAddress" className="block text-sm font-medium text-gray-700">Street address</label>
+                                    <input 
+                                        type="text" 
+                                        name="streetAddress" 
+                                        id="streetAddress" 
+                                        value={formData.streetAddress}
+                                        onChange={handleFormChange}
+                                        autoComplete="street-address" 
+                                        className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                    />
                                 </div>
 
                                 <div className="col-span-6 sm:col-span-6 lg:col-span-2">
                                     <label htmlFor="city" className="block text-sm font-medium text-gray-700">City</label>
-                                    <input type="text" name="city" id="city" autoComplete="address-level2" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                    <input 
+                                        type="text" 
+                                        name="city" 
+                                        id="city" 
+                                        value={formData.city}
+                                        onChange={handleFormChange}
+                                        autoComplete="address-level2" 
+                                        className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                    />
                                 </div>
 
                                 <div className="col-span-6 sm:col-span-3 lg:col-span-2">
-                                    <label htmlFor="region" className="block text-sm font-medium text-gray-700">State / Province</label>
-                                    <input type="text" name="region" id="region" autoComplete="address-level1" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                    <label htmlFor="state" className="block text-sm font-medium text-gray-700">State / Province</label>
+                                    <input 
+                                        type="text" 
+                                        name="state" 
+                                        id="state" 
+                                        value={formData.state}
+                                        onChange={handleFormChange}
+                                        autoComplete="address-level1" 
+                                        className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                    />
                                 </div>
 
                                 <div className="col-span-6 sm:col-span-3 lg:col-span-2">
-                                    <label htmlFor="postal-code" className="block text-sm font-medium text-gray-700">ZIP / Postal code</label>
-                                    <input type="text" name="postal-code" id="postal-code" autoComplete="postal-code" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                    <label htmlFor="postalCode" className="block text-sm font-medium text-gray-700">ZIP / Postal code</label>
+                                    <input 
+                                        type="text" 
+                                        name="postalCode" 
+                                        id="postalCode" 
+                                        value={formData.postalCode}
+                                        onChange={handleFormChange}
+                                        autoComplete="postal-code" 
+                                        className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -351,18 +488,42 @@ export default function CheckoutPage() {
                             {paymentMethod === 'credit' && (
                                 <div className="grid grid-cols-6 gap-6">
                                     <div className="col-span-6">
-                                        <label htmlFor="card-number" className="block text-sm font-medium text-gray-700">Card number</label>
-                                        <input type="text" name="card-number" id="card-number" placeholder="•••• •••• •••• ••••" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                        <label htmlFor="cardNumber" className="block text-sm font-medium text-gray-700">Card number</label>
+                                        <input 
+                                            type="text" 
+                                            name="cardNumber" 
+                                            id="cardNumber" 
+                                            value={formData.cardNumber}
+                                            onChange={handleFormChange}
+                                            placeholder="•••• •••• •••• ••••" 
+                                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                        />
                                     </div>
 
                                     <div className="col-span-6 sm:col-span-3">
-                                        <label htmlFor="expiration-date" className="block text-sm font-medium text-gray-700">Expiration date</label>
-                                        <input type="text" name="expiration-date" id="expiration-date" placeholder="MM / YY" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                        <label htmlFor="expirationDate" className="block text-sm font-medium text-gray-700">Expiration date</label>
+                                        <input 
+                                            type="text" 
+                                            name="expirationDate"
+                                            id="expirationDate" 
+                                            value={formData.expirationDate}
+                                            onChange={handleFormChange}
+                                            placeholder="MM / YY" 
+                                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                        />
                                     </div>
 
                                     <div className="col-span-6 sm:col-span-3">
                                         <label htmlFor="cvc" className="block text-sm font-medium text-gray-700">CVC</label>
-                                        <input type="text" name="cvc" id="cvc" placeholder="•••" className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+                                        <input 
+                                            type="text" 
+                                            name="cvc" 
+                                            id="cvc" 
+                                            value={formData.cvc}
+                                            onChange={handleFormChange}
+                                            placeholder="•••" 
+                                            className="mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" 
+                                        />
                                     </div>
                                 </div>
                             )}
@@ -394,7 +555,7 @@ export default function CheckoutPage() {
                                 ))}
                             </div>
                             
-                            <div className="border-t border-gray-200 pt-6 mt-6">
+                            <div className="mt-6 border-gray-200 pt-6 mt-6">
                                 <div className="flex justify-between text-sm">
                                     <p className="text-gray-600">Subtotal</p>
                                     <p className="text-gray-900 font-medium">${calculateSubtotal().toFixed(2)}</p>
@@ -413,13 +574,33 @@ export default function CheckoutPage() {
                                 </div>
                             </div>
                             
-                            <div className="mt-8">
+                            {/* Error message display */}
+                            {errorMessage && (
+                                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+                                    <span className="block sm:inline">{errorMessage}</span>
+                                </div>
+                            )}
+                            
+                            <div className="mt-6">
                                 <button
                                     type="button"
                                     onClick={handleCheckout}
-                                    className="w-full bg-blue-600 border border-transparent rounded-md py-3 px-4 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                    disabled={submitLoading}
+                                    className={`w-full border border-transparent rounded-md py-3 px-4 text-base font-medium text-white transition-colors ${
+                                        submitLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
+                                    }`}
                                 >
-                                    Complete Order
+                                    {submitLoading ? (
+                                        <span className="flex items-center justify-center">
+                                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Processing...
+                                        </span>
+                                    ) : (
+                                        'Complete Order'
+                                    )}
                                 </button>
                             </div>
                             

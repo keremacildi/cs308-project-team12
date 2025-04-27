@@ -35,6 +35,7 @@ from .serializers import (
 from django.utils.crypto import get_random_string
 from datetime import timedelta
 import os
+from decimal import Decimal
 
 # --- Home View ---
 def home(request):
@@ -94,14 +95,100 @@ def order_history(request):
 # --- PDF Generation and Email Sending ---
 def generate_invoice_pdf(order):
     buffer = BytesIO()
-    p = canvas.Canvas(buffer)
-    p.drawString(100, 800, f"Invoice for Order #{order.id}")
-    p.drawString(100, 780, f"Customer: {order.user.username}")
-    y = 750
+    p = canvas.Canvas(buffer, pagesize=(595, 842))  # A4 size
+    
+    # Add logo and header
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(50, 800, "CS308 Store")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, 780, "Invoice")
+    
+    # Add invoice information
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(400, 800, f"Invoice #{order.id}")
+    p.setFont("Helvetica", 10)
+    p.drawString(400, 780, f"Date: {order.created_at.strftime('%Y-%m-%d')}")
+    p.drawString(400, 765, f"Order Status: {order.get_status_display()}")
+    
+    # Add customer information
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, 730, "Bill To:")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, 715, f"{order.user.first_name} {order.user.last_name}")
+    p.drawString(50, 700, f"Username: {order.user.username}")
+    p.drawString(50, 685, f"Email: {order.user.email}")
+    
+    # Add delivery address if available
+    delivery = Delivery.objects.filter(order=order).first()
+    if delivery and delivery.delivery_address:
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(300, 730, "Ship To:")
+        p.setFont("Helvetica", 10)
+        p.drawString(300, 715, f"{delivery.delivery_address}")
+    
+    # Add table headers
+    p.setFont("Helvetica-Bold", 10)
+    p.drawString(50, 630, "Item")
+    p.drawString(300, 630, "Quantity")
+    p.drawString(370, 630, "Unit Price")
+    p.drawString(450, 630, "Total")
+    
+    # Add horizontal line
+    p.line(50, 620, 550, 620)
+    
+    # Add table data
+    y = 600
+    total = 0
+    p.setFont("Helvetica", 10)
+    
     for item in order.items.all():
-        p.drawString(100, y, f"{item.product.title} x {item.quantity} - ${item.product.price}")
+        if y < 100:  # Start a new page if we run out of space
+            p.showPage()
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(50, 800, "Item")
+            p.drawString(300, 800, "Quantity")
+            p.drawString(370, 800, "Unit Price")
+            p.drawString(450, 800, "Total")
+            p.line(50, 790, 550, 790)
+            p.setFont("Helvetica", 10)
+            y = 770
+        
+        item_total = item.price_at_purchase * item.quantity
+        total += item_total
+        
+        p.drawString(50, y, item.product.title)
+        p.drawString(300, y, str(item.quantity))
+        p.drawString(370, y, f"${item.price_at_purchase:.2f}")
+        p.drawString(450, y, f"${item_total:.2f}")
+        
         y -= 20
-    p.drawString(100, y - 20, f"Total: ${order.total_price}")
+    
+    # Add totals
+    p.line(50, y - 10, 550, y - 10)
+    p.drawString(350, y - 30, "Subtotal:")
+    p.drawString(450, y - 30, f"${total:.2f}")
+    
+    # Calculate tax (8%)
+    tax = total * Decimal('0.08')
+    p.drawString(350, y - 50, "Tax (8%):")
+    p.drawString(450, y - 50, f"${tax:.2f}")
+    
+    # Shipping - simplified, using fixed amount
+    shipping = Decimal('5.99')
+    p.drawString(350, y - 70, "Shipping:")
+    p.drawString(450, y - 70, f"${shipping:.2f}")
+    
+    # Final total
+    p.line(350, y - 80, 550, y - 80)
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(350, y - 100, "Total:")
+    p.drawString(450, y - 100, f"${order.total_price:.2f}")
+    
+    # Add footer
+    p.setFont("Helvetica", 8)
+    p.drawString(50, 50, "Thank you for your purchase!")
+    p.drawString(50, 35, "If you have any questions, please contact customer support.")
+    
     p.showPage()
     p.save()
     buffer.seek(0)
@@ -1307,3 +1394,43 @@ def admin_categories(request, category_id=None):
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_invoice(request, order_id):
+    try:
+        # Try to convert string order_id to integer if needed
+        try:
+            if isinstance(order_id, str):
+                if order_id.startswith('ORD-'):
+                    order_id = order_id.replace('ORD-', '')
+                order_id = int(order_id)
+        except (ValueError, TypeError):
+            # If conversion fails, we'll proceed with the original order_id
+            # and let the 404 handler take care of it
+            pass
+            
+        # Get the order, ensuring it belongs to the requesting user
+        order = get_object_or_404(Order, id=order_id, user=request.user)
+        
+        # Check if invoice already exists
+        if order.invoice_pdf and order.invoice_pdf.name:
+            # Return existing invoice if it exists
+            response = HttpResponse(order.invoice_pdf.open(), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
+            return response
+        
+        # Generate new invoice
+        buffer = generate_invoice_pdf(order)
+        
+        # Save invoice to model for future use
+        order.invoice_pdf.save(f"invoice_order_{order.id}.pdf", ContentFile(buffer.read()))
+        buffer.seek(0)  # Reset buffer position after reading
+        
+        # Return the PDF as a response
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
+        return response
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

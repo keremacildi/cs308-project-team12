@@ -34,6 +34,9 @@ urlpatterns = [
     path('api/orders/history/', views.order_history, name='api_order_history'),
     path('api/orders/<int:order_id>/cancel/', views.cancel_order, name='api_cancel_order'),
     path('api/orders/<int:order_id>/refund/', views.refund_order, name='api_refund_order'),
+    path('api/orders/<int:order_id>/invoice/', views.download_invoice, name='api_download_invoice'),
+    path('api/orders/ORD-<str:order_id>/invoice/', views.download_invoice, name='api_download_invoice_str'),
+    path('api/orders/<str:order_id>/invoice/', views.download_invoice, name='api_download_invoice_plain_str'),
     
     # Auth
     path('api/auth/login/', views.login_api, name='api_login'),

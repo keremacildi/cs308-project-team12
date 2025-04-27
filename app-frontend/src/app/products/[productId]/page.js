@@ -99,7 +99,12 @@ export default function ProductDetail({ params }) {
 
   return (
     <div className="max-w-3xl mx-auto my-10 p-8 bg-white rounded-xl shadow-sm border border-gray-200">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">{product.title}</h1>
+      <div className="flex justify-between items-start mb-4">
+        <h1 className="text-2xl font-bold text-gray-800">{product.title}</h1>
+        <div className="bg-gray-100 px-3 py-1 rounded-md">
+          <span className="text-sm font-medium text-gray-500">Product ID: {product.id}</span>
+        </div>
+      </div>
       
       <div className="aspect-square w-full max-h-96 relative mb-8 bg-gray-50 rounded-lg overflow-hidden">
         <img 
@@ -128,6 +133,19 @@ export default function ProductDetail({ params }) {
       
       <p className="text-base text-gray-800 py-2 border-b border-gray-100">
         <span className="font-semibold">Seller:</span> {product.seller?.name || product.seller}
+      </p>
+
+      <p className="text-base py-2 border-b border-gray-100">
+        <span className="font-semibold">Availability:</span> 
+        {product.quantity_in_stock > 0 ? (
+          <span className="ml-2 inline-block px-3 py-1 bg-green-100 text-green-800 rounded-md font-medium">
+            {product.quantity_in_stock} in stock
+          </span>
+        ) : (
+          <span className="ml-2 inline-block px-3 py-1 bg-red-100 text-red-800 rounded-md font-medium">
+            Out of stock
+          </span>
+        )}
       </p>
       
       {product.description && (

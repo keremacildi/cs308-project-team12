@@ -8,6 +8,10 @@ export default function AddToCartButton({ product, disabled }) {
   const [quantity, setQuantity] = useState(0);
   const [isMounted, setIsMounted] = useState(false);
 
+  // Stock can be in different fields depending on backend response
+  const stockAmount = product.quantity_in_stock || product.stock || 0;
+  const isOutOfStock = stockAmount <= 0;
+
   // Set mounted state on client side
   useEffect(() => {
     setIsMounted(true);
@@ -33,7 +37,11 @@ export default function AddToCartButton({ product, disabled }) {
     if (!isMounted) return;
     
     // Prevent adding if out of stock or button disabled
-    if (disabled || product.stock === 0) return;
+    if (disabled || isOutOfStock) {
+      setButtonState('error');
+      setTimeout(() => setButtonState('idle'), 2000);
+      return;
+    }
 
     setButtonState('adding');
     
@@ -44,13 +52,35 @@ export default function AddToCartButton({ product, disabled }) {
 
       // Check if the product already exists in the cart
       const productIndex = cart.findIndex((item) => item.id === product.id);
+      
       if (productIndex !== -1) {
+        // Check if adding one more would exceed stock
+        const currentQuantity = cart[productIndex].quantity;
+        
+        if (currentQuantity >= stockAmount) {
+          // Can't add more than available stock
+          setButtonState('error');
+          setTimeout(() => {
+            setButtonState('idle');
+          }, 2000);
+          return;
+        }
+        
         // Increase quantity if already in cart
         cart[productIndex].quantity += 1;
+        // Make sure stock info is up to date
+        cart[productIndex].stock = stockAmount;
+        cart[productIndex].quantity_in_stock = stockAmount;
         setQuantity(cart[productIndex].quantity);
       } else {
         // Add product with initial quantity of 1
-        cart.push({ ...product, quantity: 1 });
+        cart.push({ 
+          ...product, 
+          quantity: 1,
+          // Ensure stock info is included and consistent
+          stock: stockAmount,
+          quantity_in_stock: stockAmount
+        });
         setQuantity(1);
       }
 
@@ -67,9 +97,12 @@ export default function AddToCartButton({ product, disabled }) {
     }
   };
 
+  // Check if current cart quantity is at stock limit
+  const isAtStockLimit = quantity >= stockAmount;
+
   // Determine button appearance based on state
   const buttonStyles = {
-    idle: disabled 
+    idle: (disabled || isOutOfStock || isAtStockLimit)
       ? "bg-gray-200 text-gray-500 cursor-not-allowed" 
       : "bg-primary text-white hover:bg-blue-600 active:bg-blue-700",
     adding: "bg-primary text-white",
@@ -80,15 +113,20 @@ export default function AddToCartButton({ product, disabled }) {
   const buttonContent = {
     idle: (
       <>
-        {disabled ? (
+        {isOutOfStock ? (
           <>
             <AlertTriangle className="w-5 h-5 mr-2" />
             <span>Out of Stock</span>
           </>
+        ) : isAtStockLimit ? (
+          <>
+            <AlertTriangle className="w-5 h-5 mr-2" />
+            <span>Stock Limit Reached</span>
+          </>
         ) : (
           <>
             <ShoppingCart className="w-5 h-5 mr-2" />
-            <span>{quantity > 0 ? `Add More (${quantity})` : "Add to Cart"}</span>
+            <span>{quantity > 0 ? `Add More (${quantity}/${stockAmount})` : "Add to Cart"}</span>
           </>
         )}
       </>
@@ -111,7 +149,7 @@ export default function AddToCartButton({ product, disabled }) {
     error: (
       <>
         <AlertTriangle className="w-5 h-5 mr-2" />
-        <span>Failed to Add</span>
+        <span>{isAtStockLimit ? "Stock Limit Reached" : "Failed to Add"}</span>
       </>
     )
   };
@@ -119,9 +157,9 @@ export default function AddToCartButton({ product, disabled }) {
   return (
     <button
       onClick={handleAddToCart}
-      disabled={disabled || buttonState === 'adding'}
+      disabled={disabled || buttonState === 'adding' || isOutOfStock || isAtStockLimit}
       className={`flex items-center justify-center py-2.5 px-4 font-medium rounded-lg transition-colors duration-200 ${buttonStyles[buttonState]}`}
-      aria-label={disabled ? "Out of Stock" : "Add to Cart"}
+      aria-label={isOutOfStock ? "Out of Stock" : isAtStockLimit ? "Stock Limit Reached" : "Add to Cart"}
     >
       {buttonContent[buttonState]}
     </button>

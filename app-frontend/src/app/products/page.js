@@ -59,7 +59,7 @@ export default function ProductsPage() {
 
         // Update filters with URL parameters
         setFilters(prev => ({
-          ...prev,
+        ...prev,
           query,
           min_price: minPrice,
           max_price: maxPrice,
@@ -415,52 +415,52 @@ export default function ProductsPage() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {displayedProducts.map((product) => (
-                  <ProductCard
+            <ProductCard
                     key={product.id}
-                    id={product.id}
-                    title={product.title}
-                    price={product.price}
-                    image={product.image}
+              id={product.id}
+              title={product.title}
+              price={product.price}
+              image={product.image}
                     stock={product.quantity_in_stock}
                     rating={product.rating}
-                  />
-                ))}
-              </div>
+            />
+          ))}
+        </div>
             )}
 
             {/* Pagination */}
-            {totalPages > 1 && (
+        {totalPages > 1 && (
               <div className="flex justify-center mt-8">
                 <nav className="flex items-center space-x-1">
-                  <button
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
+            <button
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
                     className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
+            >
+              Previous
+            </button>
                   
                   {[...Array(totalPages)].map((_, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handlePageChange(i + 1)}
+              <button
+                key={i}
+                onClick={() => handlePageChange(i + 1)}
                       className={`px-3 py-2 rounded-md text-sm font-medium ${
                         currentPage === i + 1
                           ? "bg-blue-600 text-white"
                           : "text-gray-700 hover:bg-gray-100"
-                      }`}
-                    >
-                      {i + 1}
-                    </button>
-                  ))}
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
                   
-                  <button
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
+            <button
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
                     className="px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
+            >
+              Next
+            </button>
                 </nav>
               </div>
             )}

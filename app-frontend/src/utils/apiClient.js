@@ -261,6 +261,19 @@ const apiClient = {
       return handleResponse(response);
     },
     
+    downloadInvoice: async (orderId) => {
+      const token = localStorage.getItem('token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
+      // Simple URL construction - the backend will handle different order ID formats
+      const url = `${API_BASE_URL}/api/orders/${orderId}/invoice/`;
+      console.log(`Opening invoice URL: ${url}`);
+      
+      // Direct window.open for downloading the file
+      window.open(url, '_blank');
+      return true;
+    },
+    
     requestRefund: async (orderId, reason) => {
       const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/refund/`, {
         method: 'POST',
