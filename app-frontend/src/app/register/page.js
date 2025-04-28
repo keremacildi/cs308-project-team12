@@ -36,7 +36,14 @@ export default function RegisterPage() {
                         ?.split('=')[1] || '',
                 },
                 credentials: "include",
-                body: JSON.stringify({ name, email, password }),
+                body: JSON.stringify({ 
+                    username: name, 
+                    email: email, 
+                    password: password,
+                    confirm_password: confirmPassword,
+                    first_name: name.split(' ')[0] || '',
+                    last_name: name.split(' ').slice(1).join(' ') || ''
+                }),
             });
 
             const data = await res.json();

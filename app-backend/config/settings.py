@@ -11,7 +11,7 @@ SECRET_KEY = 'replace-this-with-your-own-secret-key'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
@@ -25,6 +25,7 @@ INSTALLED_APPS = [
 
     # Third-party apps
     'corsheaders',
+    'rest_framework',
 
     # Your Django app
     'app_backend',
@@ -33,14 +34,15 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  # Required for sessions/admin
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'app_backend.middleware.APIErrorMiddleware',  # <- move it up
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',  # Required by admin/auth
-    'django.contrib.messages.middleware.MessageMiddleware',      # Required by admin/messages
+    # 'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'app_backend.middleware.APIErrorMiddleware',
 ]
+
 
 # Points to your project's root URL configuration file
 ROOT_URLCONF = 'config.urls'
@@ -107,10 +109,8 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/products')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # Next.js frontend
-]
-
+CORS_ALLOWED_ORIGINS = []
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Add CORS headers to the list of allowed headers
@@ -129,14 +129,29 @@ CORS_ALLOW_HEADERS = [
 # CSRF settings
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "http://192.168.1.14:3000",
+    "http://192.168.1.14:8000"
 ]
-
-CSRF_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = None # 'Lax'
 CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
 CSRF_USE_SESSIONS = False
 CSRF_COOKIE_HTTPONLY = False
 
 # Session settings
-SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = None # 'Lax'
 SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 SESSION_COOKIE_HTTPONLY = True
+
+# REST Framework settings - allow any access by default
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+}

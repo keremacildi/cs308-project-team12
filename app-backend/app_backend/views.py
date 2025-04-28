@@ -19,17 +19,17 @@ from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from .permissions import IsStaff
 from django.db import models
+import smtplib
 
 from .models import (
-    Product, ShoppingCartItem, Order, OrderItem, Rating,
-    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview,
-    Category, Brand, Seller, CustomerProfile
-)
+    Product,  Order, OrderItem, Rating,
+    Comment,    
+    Category,   )
 from django.contrib.auth.models import User
 from .serializers import (
-    OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer,
-    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer,
-    CategorySerializer, BrandSerializer, SellerSerializer, UserCreateSerializer,
+    OrderSerializer,  
+    ProductSerializer,   
+    CategorySerializer,   UserCreateSerializer,
     UserSerializer, UserUpdateSerializer
 )
 from django.utils.crypto import get_random_string
@@ -41,56 +41,42 @@ from decimal import Decimal
 def home(request):
     return HttpResponse("Welcome to the backend API. Everything is running!")
 
-# --- Helper for Cart Items ---
-def get_cart_items(request):
-    if request.user.is_authenticated:
-        return ShoppingCartItem.objects.filter(user=request.user)
-    else:
-        session_key = request.session.session_key
-        if not session_key:
-            request.session.save()
-            session_key = request.session.session_key
-        return ShoppingCartItem.objects.filter(session_key=session_key)
-
-# --- Product Listing ---
-
-# --- Product Details ---
-def product_detail(request, product_id):
-    product = get_object_or_404(Product, pk=product_id)
-    serializer = ProductSerializer(product)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_all_products(request):
+    """
+    Get all products.
+    """
+    products = Product.objects.all()
+    serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
 
-# --- Cart Operations ---
-def add_to_cart(request, product_id):
-    product = get_object_or_404(Product, pk=product_id)
-    if not product.is_available:
-        return HttpResponse("Product is out of stock.", status=400)
-    if request.user.is_authenticated:
-        item, created = ShoppingCartItem.objects.get_or_create(user=request.user, product=product)
-    else:
-        session_key = request.session.session_key
-        if not session_key:
-            request.session.save()
-            session_key = request.session.session_key
-        item, created = ShoppingCartItem.objects.get_or_create(session_key=session_key, product=product)
-    item.quantity += 1
-    item.save()
-    return redirect('view_cart')
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_product_detail(request, id):
+    """
+    Get details for a specific product by ID.
+    """
+    try:
+        product = Product.objects.get(id=id)
+        serializer = ProductSerializer(product)
+        return Response(serializer.data)
+    except Product.DoesNotExist:
+        return Response(
+            {'error': 'Product not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
 
-def remove_from_cart(request, item_id):
-    item = get_object_or_404(ShoppingCartItem, id=item_id)
-    item.delete()
-    return redirect('view_cart')
 
-# --- Checkout Process ---
-
-# --- Order History ---
-@login_required
-def order_history(request):
-    orders = Order.objects.filter(user=request.user).order_by('-created_at')
-    return render(request, 'store/order_history.html', {'orders': orders})
-
-# --- Rating and Comment Submission ---
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_categories(request):
+    """
+    Get all product categories.
+    """
+    categories = Category.objects.all()
+    serializer = CategorySerializer(categories, many=True)
+    return Response(serializer.data)
 
 # --- PDF Generation and Email Sending ---
 def generate_invoice_pdf(order):
@@ -196,31 +182,67 @@ def generate_invoice_pdf(order):
 
 def send_invoice_email(order):
     pdf = generate_invoice_pdf(order)
+    
+    # Configure SMTP settings for ProtonMail
+    smtp_server = "smtp.proton.me"
+    smtp_port = 587
+    smtp_username = "cs308demo@proton.me"  # Replace with actual email
+    smtp_password = "123456789"  # Replace with actual password
+    
+    # Create and configure email message
     email = EmailMessage(
         f"Invoice for Order #{order.id}",
         "Please find your invoice attached.",
+        from_email=smtp_username,
         to=[order.user.email]
     )
     email.attach(f"invoice_order_{order.id}.pdf", pdf.read(), "application/pdf")
-    email.send()
+    
+    # Send email via ProtonMail SMTP
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.starttls()
+        server.login(smtp_username, smtp_password)
+        server.send_message(email)
 
-# --- Merge Cart Items on Login ---
-@receiver(user_logged_in)
-def merge_cart(sender, request, user, **kwargs):
-    session_key = request.session.session_key
-    if not session_key:
-        return
-    session_items = ShoppingCartItem.objects.filter(session_key=session_key)
-    for item in session_items:
-        existing_item = ShoppingCartItem.objects.filter(user=user, product=item.product).first()
-        if existing_item:
-            existing_item.quantity += item.quantity
-            existing_item.save()
-            item.delete()
-        else:
-            item.user = user
-            item.session_key = None
-            item.save()
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_invoice(request, order_id):
+    try:
+        # Try to convert string order_id to integer if needed
+        try:
+            if isinstance(order_id, str):
+                if order_id.startswith('ORD-'):
+                    order_id = order_id.replace('ORD-', '')
+                order_id = int(order_id)
+        except (ValueError, TypeError):
+            # If conversion fails, we'll proceed with the original order_id
+            # and let the 404 handler take care of it
+            pass
+            
+        # Get the order, ensuring it belongs to the requesting user
+        order = get_object_or_404(Order, id=order_id, user=request.user)
+        
+        # Check if invoice already exists
+        if order.invoice_pdf and order.invoice_pdf.name:
+            # Return existing invoice if it exists
+            response = HttpResponse(order.invoice_pdf.open(), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
+            return response
+        
+        # Generate new invoice
+        buffer = generate_invoice_pdf(order)
+        
+        # Save invoice to model for future use
+        order.invoice_pdf.save(f"invoice_order_{order.id}.pdf", ContentFile(buffer.read()))
+        buffer.seek(0)  # Reset buffer position after reading
+        
+        # Return the PDF as a response
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
+        return response
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- Order Cancellation and Refund ---
 @api_view(['POST'])
@@ -264,12 +286,6 @@ def refund_order(request, order_id):
         [order.user.email]
     )
     return Response({'message': 'Order refunded successfully'})
-
-# --- Customer Profile ---
-
-# --- Wishlist Management ---
-
-# --- Manager Dashboard ---
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -351,16 +367,11 @@ def create_order(request):
             print(f"Created order item for product {product.id}, reduced stock to {product.quantity_in_stock}")
         
         # Create delivery record
-        Delivery.objects.create(
-            order=order,
-            delivery_address=delivery_address,
-            status='processing'
-        )
-        
+
         # Clear the cart if this was a cart-based order
         if 'order_items' not in request.data:
             cart_items.delete()
-        
+        send_invoice_email(order)
         # Return detailed order information
         return Response({
             'order': {
@@ -393,249 +404,6 @@ def order_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def submit_review(request, product_id):
-    try:
-        product = Product.objects.get(id=product_id)
-        
-        # Check if the user has purchased and received the product
-        delivery = Delivery.objects.filter(
-            order__user=request.user,
-            order__items__product=product,
-            status='delivered'
-        ).first()
-        
-        if not delivery:
-            return Response(
-                {'error': 'You can only review products that have been delivered to you.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Check if user has already reviewed this product
-        existing_review = ProductReview.objects.filter(
-            user=request.user,
-            product=product
-        ).first()
-        
-        if existing_review:
-            return Response(
-                {'error': 'You have already reviewed this product.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Create the review
-        review = ProductReview.objects.create(
-            user=request.user,
-            product=product,
-            rating=request.data.get('rating'),
-            comment=request.data.get('comment', ''),
-            delivery=delivery,
-            is_approved=False  # Comments need approval, ratings don't
-        )
-        
-        return Response({
-            'message': 'Review submitted successfully',
-            'review_id': review.id
-        }, status=status.HTTP_201_CREATED)
-        
-    except Product.DoesNotExist:
-        return Response(
-            {'error': 'Product not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-def get_product_reviews(request, product_id):
-    try:
-        reviews = ProductReview.objects.filter(
-            product_id=product_id,
-            is_approved=True
-        ).select_related('user', 'product')
-        
-        serializer = ProductReviewSerializer(reviews, many=True)
-        return Response({
-            'reviews': serializer.data,
-            'average_rating': reviews.aggregate(Avg('rating'))['rating__avg'] or 0
-        })
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-@permission_classes([IsStaff])
-def approve_review(request, review_id):
-    try:
-        review = ProductReview.objects.get(id=review_id)
-        review.is_approved = True
-        review.save()
-        
-        return Response({
-            'message': 'Review approved successfully'
-        })
-        
-    except ProductReview.DoesNotExist:
-        return Response(
-            {'error': 'Review not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-def cart_view(request):
-    try:
-        cart_items = get_cart_items(request)
-        serializer = ShoppingCartItemSerializer(cart_items, many=True)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-def add_to_cart(request, product_id):
-    try:
-        product = get_object_or_404(Product, id=product_id)
-        quantity = request.data.get('quantity', 1)
-        
-        if quantity > product.quantity_in_stock:
-            return Response(
-                {'error': 'Not enough stock available'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        cart_item, created = ShoppingCartItem.objects.get_or_create(
-            product=product,
-            user=request.user if request.user.is_authenticated else None,
-            session_key=request.session.session_key if not request.user.is_authenticated else None,
-            defaults={'quantity': quantity}
-        )
-        
-        if not created:
-            cart_item.quantity += quantity
-            cart_item.save()
-        
-        serializer = ShoppingCartItemSerializer(cart_item)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['DELETE'])
-def remove_from_cart(request, item_id):
-    try:
-        cart_item = get_object_or_404(ShoppingCartItem, id=item_id)
-        cart_item.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['PATCH'])
-def update_cart_item(request, item_id):
-    try:
-        cart_item = get_object_or_404(ShoppingCartItem, id=item_id)
-        quantity = request.data.get('quantity')
-        
-        if quantity is None:
-            return Response(
-                {'error': 'Quantity is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if quantity > cart_item.product.quantity_in_stock:
-            return Response(
-                {'error': 'Not enough stock available'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        cart_item.quantity = quantity
-        cart_item.save()
-        
-        serializer = ShoppingCartItemSerializer(cart_item)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-# --- API Views ---
-class ProductListAPIView(ListAPIView):
-    permission_classes = [AllowAny]
-    serializer_class = ProductSerializer
-    queryset = Product.objects.all()
-
-    def get_queryset(self):
-        queryset = Product.objects.all()
-        query = self.request.query_params.get('q', None)
-        sort_by = self.request.query_params.get('sort', None)
-        
-        if query:
-            queryset = queryset.filter(
-                Q(title__icontains=query) | Q(description__icontains=query)
-            )
-        
-        if sort_by == 'price':
-            queryset = queryset.order_by('price')
-        elif sort_by == 'popularity':
-            queryset = queryset.order_by('-popularity')
-            
-        return queryset
-
-class ProductDetailAPIView(RetrieveAPIView):
-    permission_classes = [AllowAny]
-    serializer_class = ProductSerializer
-    queryset = Product.objects.all()
-    lookup_field = 'id'
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_all_products(request):
-    """
-    Get all products with optional filtering and sorting.
-    """
-    products = Product.objects.all()
-    
-    # Apply category filter if provided
-    category = request.query_params.get('category', None)
-    if category:
-        products = products.filter(category__name=category)
-    
-    # Apply brand filter if provided
-    brand = request.query_params.get('brand', None)
-    if brand:
-        products = products.filter(brand__name=brand)
-    
-    # Apply seller filter if provided
-    seller = request.query_params.get('seller', None)
-    if seller:
-        products = products.filter(seller__name=seller)
-    
-    # Apply price range filter if provided
-    min_price = request.query_params.get('min_price', None)
-    if min_price:
-        products = products.filter(price__gte=float(min_price))
-    
-    max_price = request.query_params.get('max_price', None)
-    if max_price:
-        products = products.filter(price__lte=float(max_price))
-    
-    # Apply sorting
-    sort_by = request.query_params.get('sort', None)
-    if sort_by == 'price_asc':
-        products = products.order_by('price')
-    elif sort_by == 'price_desc':
-        products = products.order_by('-price')
-    elif sort_by == 'popularity':
-        products = products.order_by('-popularity')
-    elif sort_by == 'rating':
-        products = products.order_by('-avg_rating')
-    
-    # Serialize and return
-    serializer = ProductSerializer(products, many=True)
-    return Response(serializer.data)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -691,7 +459,6 @@ def login_api(request):
             samesite='Lax',
             secure=False
         )
-        
         return response
         
     except Exception as e:
@@ -700,127 +467,6 @@ def login_api(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def search_products(request):
-    try:
-        # Get query parameters with fallbacks
-        query = request.query_params.get('query', '') or request.query_params.get('q', '')
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        min_price = request.query_params.get('min_price')
-        max_price = request.query_params.get('max_price')
-        category = request.query_params.get('category')
-        brand = request.query_params.get('brand')
-        seller = request.query_params.get('seller')
-        sort_by = request.query_params.get('sort', 'relevance')
-
-        # Start with base queryset
-        products = Product.objects.all()
-
-        # Apply search query to multiple fields
-        if query:
-            # Using Q objects to create OR conditions
-            products = products.filter(
-                Q(title__icontains=query) |
-                Q(model__icontains=query) |
-                Q(description__icontains=query) |
-                Q(category__name__icontains=query) |
-                Q(brand__name__icontains=query) |
-                Q(seller__name__icontains=query)
-            )
-
-        # Apply price filters
-        if min_price:
-            products = products.filter(price__gte=float(min_price))
-        if max_price:
-            products = products.filter(price__lte=float(max_price))
-
-        # Apply category filter
-        if category:
-            products = products.filter(category__name=category)
-            
-        # Apply brand filter
-        if brand:
-            products = products.filter(brand__name=brand)
-            
-        # Apply seller filter
-        if seller:
-            products = products.filter(seller__name=seller)
-
-        # Apply sorting - added more options and improved relevance
-        if sort_by == 'price_low':
-            products = products.order_by('price')
-        elif sort_by == 'price_high':
-            products = products.order_by('-price')
-        elif sort_by == 'popularity':
-            products = products.order_by('-popularity')
-        elif sort_by == 'rating':
-            products = products.order_by('-avg_rating')
-        elif sort_by == 'newest':
-            products = products.order_by('-id')  # Assuming newer products have higher IDs
-        elif sort_by == 'relevance' and query:
-            # For relevance sorting with query, prioritize exact matches in title and model
-            products = products.annotate(
-                title_match=models.Case(
-                    models.When(title__iexact=query, then=models.Value(10)),
-                    models.When(title__istartswith=query, then=models.Value(5)),
-                    models.When(title__icontains=query, then=models.Value(3)),
-                    default=models.Value(0),
-                    output_field=models.IntegerField()
-                ),
-                model_match=models.Case(
-                    models.When(model__iexact=query, then=models.Value(8)),
-                    models.When(model__istartswith=query, then=models.Value(4)),
-                    models.When(model__icontains=query, then=models.Value(2)),
-                    default=models.Value(0),
-                    output_field=models.IntegerField()
-                ),
-                brand_match=models.Case(
-                    models.When(brand__name__iexact=query, then=models.Value(5)),
-                    models.When(brand__name__istartswith=query, then=models.Value(3)),
-                    models.When(brand__name__icontains=query, then=models.Value(1)),
-                    default=models.Value(0),
-                    output_field=models.IntegerField()
-                )
-            ).order_by('-title_match', '-model_match', '-brand_match', '-popularity')
-
-        # Calculate pagination
-        total_products = products.count()
-        total_pages = (total_products + page_size - 1) // page_size
-        start = (page - 1) * page_size
-        end = start + page_size
-
-        # Get paginated results
-        paginated_products = products[start:end]
-
-        # Serialize results
-        serializer = ProductSerializer(paginated_products, many=True)
-
-        return Response({
-            'products': serializer.data,
-            'pagination': {
-                'total': total_products,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': total_pages
-            },
-            'filters': {
-                'query': query,
-                'min_price': min_price,
-                'max_price': max_price,
-                'category': category,
-                'brand': brand,
-                'seller': seller,
-                'sort_by': sort_by
-            }
-        })
-
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -909,150 +555,7 @@ def reset_password(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-@api_view(['GET'])
-@permission_classes([IsStaff])
-def admin_dashboard(request):
-    try:
-        # Get recent orders
-        recent_orders = Order.objects.select_related('user').order_by('-created_at')[:10]
-        
-        # Get sales statistics
-        total_sales = Order.objects.filter(
-            status='delivered',
-            created_at__gte=timezone.now() - timedelta(days=30)
-        ).aggregate(total=Sum('total_price'))['total'] or 0
-        
-        # Get product statistics
-        product_stats = Product.objects.aggregate(
-            total_products=Count('id'),
-            low_stock=Count('id', filter=Q(quantity_in_stock__lt=10))
-        )
-        
-        # Get recent reviews
-        recent_reviews = ProductReview.objects.select_related(
-            'user', 'product'
-        ).order_by('-created_at')[:5]
-        
-        return Response({
-            'recent_orders': OrderSerializer(recent_orders, many=True).data,
-            'sales': {
-                'total_last_30_days': total_sales,
-                'total_orders': Order.objects.count(),
-                'pending_orders': Order.objects.filter(status='processing').count()
-            },
-            'products': {
-                'total': product_stats['total_products'],
-                'low_stock': product_stats['low_stock']
-            },
-            'recent_reviews': ProductReviewSerializer(recent_reviews, many=True).data
-        })
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
-@api_view(['GET'])
-@permission_classes([IsStaff])
-def admin_orders(request):
-    try:
-        status_filter = request.query_params.get('status')
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        
-        orders = Order.objects.select_related('user').all()
-        
-        if status_filter:
-            orders = orders.filter(status=status_filter)
-        if date_from:
-            orders = orders.filter(created_at__gte=date_from)
-        if date_to:
-            orders = orders.filter(created_at__lte=date_to)
-            
-        serializer = OrderSerializer(orders, many=True)
-        return Response(serializer.data)
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET', 'PUT', 'POST', 'DELETE'])
-@permission_classes([IsStaff])
-def admin_products(request, product_id=None):
-    try:
-        if request.method == 'GET':
-            if product_id:
-                product = get_object_or_404(Product, id=product_id)
-                serializer = ProductSerializer(product)
-            else:
-                products = Product.objects.all()
-                serializer = ProductSerializer(products, many=True)
-            return Response(serializer.data)
-            
-        elif request.method == 'PUT':
-            product = get_object_or_404(Product, id=product_id)
-            
-            # Handle form data or JSON data
-            if request.content_type and 'multipart/form-data' in request.content_type:
-                serializer = ProductSerializer(product, data=request.data, partial=True)
-                if serializer.is_valid():
-                    serializer.save()
-                    return Response(serializer.data)
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            else:
-                # Handle JSON data
-                serializer = ProductSerializer(product, data=request.data, partial=True)
-                if serializer.is_valid():
-                    serializer.save()
-                    return Response(serializer.data)
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        elif request.method == 'POST':
-            # Handle form data or JSON data
-            if request.content_type and 'multipart/form-data' in request.content_type:
-                serializer = ProductSerializer(data=request.data)
-                if serializer.is_valid():
-                    serializer.save()
-                    return Response(serializer.data, status=status.HTTP_201_CREATED)
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            else:
-                # Handle JSON data
-                serializer = ProductSerializer(data=request.data)
-                if serializer.is_valid():
-                    serializer.save()
-                    return Response(serializer.data, status=status.HTTP_201_CREATED)
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        elif request.method == 'DELETE':
-            product = get_object_or_404(Product, id=product_id)
-            product.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-            
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def wishlist_view(request):
-    try:
-        wishlist_items = Wishlist.objects.filter(
-            user=request.user
-        ).select_related('product')
-        
-        serializer = WishlistSerializer(wishlist_items, many=True)
-        return Response(serializer.data)
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -1074,8 +577,10 @@ def register_api(request):
     }
     """
     serializer = UserCreateSerializer(data=request.data)
+    print(request.data)
     if serializer.is_valid():
         user = serializer.save()
+        print(serializer.data)
         # Create a UserSerializer instance to return the user data
         user_serializer = UserSerializer(user)
         return Response({
@@ -1146,36 +651,6 @@ def change_password(request):
         'message': 'Password changed successfully'
     })
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_categories(request):
-    """
-    Get all product categories.
-    """
-    categories = Category.objects.all()
-    serializer = CategorySerializer(categories, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_brands(request):
-    """
-    Get all product brands.
-    """
-    brands = Brand.objects.all()
-    serializer = BrandSerializer(brands, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_sellers(request):
-    """
-    Get all product sellers.
-    """
-    sellers = Seller.objects.all()
-    serializer = SellerSerializer(sellers, many=True)
-    return Response(serializer.data)
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_api(request):
@@ -1204,126 +679,6 @@ def check_auth(request):
         'authenticated': False
     })
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def add_to_wishlist(request, product_id):
-    """
-    Add a product to the user's wishlist
-    """
-    try:
-        product = get_object_or_404(Product, id=product_id)
-        
-        # Check if product is already in wishlist
-        wishlist_item, created = Wishlist.objects.get_or_create(
-            user=request.user,
-            product=product
-        )
-        
-        if created:
-            return Response({
-                'message': 'Product added to wishlist'
-            }, status=status.HTTP_201_CREATED)
-        else:
-            return Response({
-                'message': 'Product already in wishlist'
-            })
-            
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def remove_from_wishlist(request, product_id):
-    """
-    Remove a product from the user's wishlist
-    """
-    try:
-        wishlist_item = get_object_or_404(
-            Wishlist, 
-            user=request.user,
-            product_id=product_id
-        )
-        
-        wishlist_item.delete()
-        return Response({
-            'message': 'Product removed from wishlist'
-        }, status=status.HTTP_200_OK)
-            
-    except Wishlist.DoesNotExist:
-        return Response({
-            'error': 'Product not in wishlist'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_products_by_category(request, category_id):
-    """
-    Get all products from a specific category
-    """
-    try:
-        # Verify category exists
-        category = get_object_or_404(Category, id=category_id)
-        
-        # Get products in this category
-        products = Product.objects.filter(category=category)
-        
-        # Apply additional filters if provided
-        min_price = request.query_params.get('min_price')
-        if min_price:
-            products = products.filter(price__gte=float(min_price))
-        
-        max_price = request.query_params.get('max_price')
-        if max_price:
-            products = products.filter(price__lte=float(max_price))
-        
-        # Apply sorting
-        sort_by = request.query_params.get('sort', None)
-        if sort_by == 'price_asc':
-            products = products.order_by('price')
-        elif sort_by == 'price_desc':
-            products = products.order_by('-price')
-        elif sort_by == 'popularity':
-            products = products.order_by('-popularity')
-        elif sort_by == 'rating':
-            products = products.order_by('-avg_rating')
-        
-        # Serialize and paginate
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        
-        total_products = products.count()
-        total_pages = (total_products + page_size - 1) // page_size
-        
-        start_index = (page - 1) * page_size
-        end_index = min(start_index + page_size, total_products)
-        
-        paginated_products = products[start_index:end_index]
-        serializer = ProductSerializer(paginated_products, many=True)
-        
-        return Response({
-            'category': category.name,
-            'products': serializer.data,
-            'pagination': {
-                'total': total_products,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': total_pages
-            }
-        })
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)}, 
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
 # Media files serving view
 def serve_media_file(request, filename):
@@ -1343,94 +698,3 @@ def serve_media_file(request, filename):
     # Serve the file directly
     return FileResponse(open(file_path, 'rb'))
 
-@api_view(['GET', 'PUT', 'POST', 'DELETE'])
-@permission_classes([IsStaff])
-def admin_categories(request, category_id=None):
-    """
-    Admin endpoint for managing categories
-    GET: Retrieve all categories or a specific category
-    POST: Create a new category
-    PUT: Update an existing category
-    DELETE: Remove a category
-    """
-    try:
-        if request.method == 'GET':
-            if category_id:
-                category = get_object_or_404(Category, id=category_id)
-                serializer = CategorySerializer(category)
-            else:
-                categories = Category.objects.all()
-                serializer = CategorySerializer(categories, many=True)
-            return Response(serializer.data)
-            
-        elif request.method == 'POST':
-            serializer = CategorySerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        elif request.method == 'PUT':
-            category = get_object_or_404(Category, id=category_id)
-            serializer = CategorySerializer(category, data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        elif request.method == 'DELETE':
-            category = get_object_or_404(Category, id=category_id)
-            # Check if there are products using this category
-            if Product.objects.filter(category=category).exists():
-                return Response(
-                    {'error': 'Cannot delete category that has products assigned to it'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            category.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-            
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def download_invoice(request, order_id):
-    try:
-        # Try to convert string order_id to integer if needed
-        try:
-            if isinstance(order_id, str):
-                if order_id.startswith('ORD-'):
-                    order_id = order_id.replace('ORD-', '')
-                order_id = int(order_id)
-        except (ValueError, TypeError):
-            # If conversion fails, we'll proceed with the original order_id
-            # and let the 404 handler take care of it
-            pass
-            
-        # Get the order, ensuring it belongs to the requesting user
-        order = get_object_or_404(Order, id=order_id, user=request.user)
-        
-        # Check if invoice already exists
-        if order.invoice_pdf and order.invoice_pdf.name:
-            # Return existing invoice if it exists
-            response = HttpResponse(order.invoice_pdf.open(), content_type='application/pdf')
-            response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
-            return response
-        
-        # Generate new invoice
-        buffer = generate_invoice_pdf(order)
-        
-        # Save invoice to model for future use
-        order.invoice_pdf.save(f"invoice_order_{order.id}.pdf", ContentFile(buffer.read()))
-        buffer.seek(0)  # Reset buffer position after reading
-        
-        # Return the PDF as a response
-        response = HttpResponse(buffer, content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
-        return response
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
