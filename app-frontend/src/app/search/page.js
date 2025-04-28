@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import styles from '@/styles/search.module.css';
+import { api } from '../../lib/api';
 
 export default function SearchPage() {
     const router = useRouter();
@@ -29,15 +30,7 @@ export default function SearchPage() {
         const fetchResults = async () => {
             try {
                 setLoading(true);
-                const queryParams = new URLSearchParams();
-                Object.entries(filters).forEach(([key, value]) => {
-                    if (value) queryParams.append(key, value);
-                });
-
-                const response = await fetch(`http://localhost:8000/api/search/?${queryParams.toString()}`);
-                if (!response.ok) throw new Error('Failed to fetch search results');
-
-                const data = await response.json();
+                const data = await api.search.products(filters);
                 setProducts(data.products);
                 setPagination(data.pagination);
                 setError('');

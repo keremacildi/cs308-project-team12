@@ -1,16 +1,10 @@
 // app/products/[productId]/page.js
-import { mockProducts } from '../../data/mock_data/products';
 import AddToCartButton from '../../../components/ui/AddToCartButton';
+import Image from 'next/image';
 
-export async function generateStaticParams() {
-  return mockProducts.product.map((prod) => ({
-    productId: prod.id.toString(),
-  }));
-}
 
 export default function ProductDetail({ params }) {
   const { productId } = params;
-  const product = mockProducts.product.find((p) => p.id.toString() === productId);
 
   if (!product) {
     return <div>Product not found.</div>;
@@ -20,7 +14,7 @@ export default function ProductDetail({ params }) {
     <div style={styles.container}>
       <h1>{product.title}</h1>
       {/* Update image path to point to the new static folder */}
-      <img src={`/images/products/${product.image}`} alt={product.title} style={styles.image} />
+      <Image src={`/images/products/${product.image}`} alt={product.title} style={styles.image} />
       <p style={styles.detail}><strong>Price:</strong> ${product.price}</p>
       <p style={styles.detail}><strong>Category:</strong> {product.category}</p>
       <p style={styles.detail}><strong>Brand:</strong> {product.brand}</p>

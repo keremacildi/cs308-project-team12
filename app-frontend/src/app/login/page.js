@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { api } from '../../lib/api';
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
@@ -47,44 +48,40 @@ export default function LoginPage() {
         try {
             console.log('Attempting login with:', { email, password });
             
-            // First get CSRF token
-            const csrfResponse = await fetch("http://localhost:8000/api/auth/login/", {
-                method: "GET",
-                credentials: "include",
-            });
-            
-            const res = await fetch("http://localhost:8000/api/auth/login/", {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-CSRFToken": document.cookie.split('; ')
-                        .find(row => row.startsWith('csrftoken='))
-                        ?.split('=')[1] || '',
-                },
-                credentials: "include",
-                body: JSON.stringify({ email, password }),
-            });
+            try {
+                const data = await api.auth.login({ email, password });
+                console.log('Login response data:', data);
 
-            console.log('Login response status:', res.status);
-            const data = await res.json();
-            console.log('Login response data:', data);
-
-            if (res.ok) {
                 // Store user data in localStorage and set cookie
-                localStorage.setItem("user", JSON.stringify(data));
+                localStorage.setItem("user", JSON.stringify(data.user));
                 localStorage.setItem("isLoggedIn", "true");
                 
+                // Set additional cookies to ensure auth state is preserved
+                document.cookie = `userSession=${data.user.id}; path=/; max-age=86400`; // 24 hours
+                document.cookie = `isAuthenticated=true; path=/; max-age=86400`; // 24 hours
+                
                 // Set user cookie
-                document.cookie = `user=${JSON.stringify(data)}; path=/; max-age=86400`; // 24 hours
+                document.cookie = `user=${JSON.stringify(data.user)}; path=/; max-age=86400`; // 24 hours
+                
+                // If there's a CSRF token, also set it
+                if (data.csrftoken) {
+                    document.cookie = `csrftoken=${data.csrftoken}; path=/; max-age=86400`;
+                } else {
+                    // The CSRF token might be extracted from the response instead
+                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                    if (csrfToken) {
+                        document.cookie = `csrftoken=${csrfToken}; path=/; max-age=86400`;
+                    }
+                }
                 
                 setSuccess(true);
 
                 // Redirect based on user type
-                const redirectPath = data.is_staff ? "/admin/dashboard" : "/profile";
+                const redirectPath = data.user.is_staff ? "/admin/dashboard" : "/profile";
                 setTimeout(() => (window.location.href = redirectPath), 2000);
-            } else {
-                setError(data.error || "Login failed. Please check your credentials.");
+            } catch (err) {
+                console.error('Login error:', err);
+                setError(err.message || "Login failed. Please check your credentials.");
             }
         } catch (err) {
             console.error('Login error:', err);
@@ -106,7 +103,7 @@ export default function LoginPage() {
                             </svg>
                         </div>
                         <h2 className="text-3xl font-bold text-gray-800 mb-2">Welcome Back!</h2>
-                        <p className="text-gray-600">You've successfully logged in. Redirecting you now...</p>
+                        <p className="text-gray-600">You&apos;ve successfully logged in. Redirecting you now...</p>
                     </div>
                 </div>
             </div>
@@ -189,7 +186,7 @@ export default function LoginPage() {
                 
                 <div className="mt-8 text-center">
                     <p className="text-gray-700">
-                        Don't have an account?{" "}
+                        Don&apos;t have an account?{" "}
                         <Link href="/register" className="text-blue-600 hover:text-blue-800 font-medium">
                             Create an account
                         </Link>

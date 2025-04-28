@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { api } from '../../lib/api';
 
 export default function RegisterPage() {
     const [name, setName] = useState("");
@@ -20,36 +21,18 @@ export default function RegisterPage() {
         }
 
         try {
-            // First get CSRF token
-            const csrfResponse = await fetch("http://localhost:8000/api/auth/register/", {
-                method: "GET",
-                credentials: "include",
-            });
-            
-            const res = await fetch("http://localhost:8000/api/auth/register/", {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-CSRFToken": document.cookie.split('; ')
-                        .find(row => row.startsWith('csrftoken='))
-                        ?.split('=')[1] || '',
-                },
-                credentials: "include",
-                body: JSON.stringify({ name, email, password }),
+            const data = await api.auth.register({ 
+                username: name,
+                name, 
+                email, 
+                password 
             });
 
-            const data = await res.json();
-
-            if (res.ok) {
-                setSuccess(true);
-                setTimeout(() => (window.location.href = "/login"), 3000);
-            } else {
-                setError(data.error || "Registration failed. Please try again.");
-            }
+            setSuccess(true);
+            setTimeout(() => (window.location.href = "/login"), 3000);
         } catch (err) {
             console.error('Registration error:', err);
-            setError("Connection error. Please try again.");
+            setError(err.message || "Registration failed. Please try again.");
         }
     };
 

@@ -25,7 +25,7 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                         <h3 className="text-lg font-medium text-gray-900 truncate mb-1">{item.title}</h3>
                     </Link>
                     <p className="text-gray-500 text-sm mb-2">
-                        ${item.price.toFixed(2)} each
+                        ${(parseFloat(item.price) || 0).toFixed(2)} each
                     </p>
                     
                     {/* Stock Information */}
@@ -79,7 +79,7 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                 {/* Price and Actions */}
                 <div className="flex flex-col items-end space-y-3">
                     <span className="text-lg font-medium text-gray-900">
-                        ${(item.price * item.quantity).toFixed(2)}
+                        ${((parseFloat(item.price) || 0) * item.quantity).toFixed(2)}
                     </span>
                     
                     <button

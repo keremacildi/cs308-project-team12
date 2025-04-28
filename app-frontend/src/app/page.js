@@ -1,22 +1,19 @@
 "use client"
 import { useState, useEffect } from 'react';
-import { mockProducts } from './data/mock_data/products';
 import ProductCard from '../components/ProductCard';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, ShoppingBag, Smartphone, Home as HomeIcon, Shirt } from 'lucide-react';
-
+import { api } from '../lib/api';
 // Category icon mapping
 const categoryIcons = {
-  "Electronics": <Smartphone className="w-5 h-5" />,
-  "Home Appliances": <HomeIcon className="w-5 h-5" />,
-  "Clothing": <Shirt className="w-5 h-5" />,
   "default": <ShoppingBag className="w-5 h-5" />
 };
 
 export default function HomePage() {
-  // Extract and sort products by rating (popularity) in descending order
-  const productsArray = mockProducts.product;
-  const sortedProducts = [...productsArray].sort((a, b) => b.rating - a.rating);
+ 
+  // Categories state
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
   
   // Auto-slide state
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -24,6 +21,24 @@ export default function HomePage() {
   
   // Define how many products per slide (responsive)
   const [itemsPerSlide, setItemsPerSlide] = useState(3);
+  
+  // Fetch categories
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setLoadingCategories(true);
+        const data = await api.categories.list();
+        setCategories(data || []);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        setCategories([]);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+    
+    fetchCategories();
+  }, []);
   
   // Update items per slide based on window width
   useEffect(() => {
@@ -54,20 +69,9 @@ export default function HomePage() {
   }, [autoSlide, currentSlide]);
   
   // Create slides based on items per slide
-  const totalProducts = sortedProducts.length;
   const slides = [];
   
-  for (let i = 0; i < totalProducts; i += itemsPerSlide) {
-    let slideItems = sortedProducts.slice(i, i + itemsPerSlide);
-    if (slideItems.length < itemsPerSlide) {
-      slideItems = [...slideItems];
-      while (slideItems.length < itemsPerSlide) {
-        slideItems.push(null);
-      }
-    }
-    slides.push(slideItems);
-  }
-
+  
   // Move to next slide (wrap-around)
   const nextSlide = () => {
     setCurrentSlide((prev) => (prev + 1) % slides.length);
@@ -84,9 +88,6 @@ export default function HomePage() {
     callback();
     setTimeout(() => setAutoSlide(true), 10000); // Resume auto-slide after 10 seconds
   };
-
-  // For the categories section: get unique categories
-  const categories = [...new Set(productsArray.map(product => product.category))].slice(0, 3);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -110,7 +111,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
+      
       {/* Categories Section */}
       <section className="mb-12">
         <div className="flex justify-between items-center mb-6">
@@ -119,24 +120,37 @@ export default function HomePage() {
             View All
           </Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map((category, index) => (
-            <Link
-              key={index}
-              href={`/products?category=${encodeURIComponent(category)}`}
-              className="group"
-            >
-              <div className="bg-white rounded-xl shadow-sm p-6 h-full flex flex-col justify-center items-center transition-transform hover:shadow-md hover:-translate-y-1 border border-gray-100">
-                <div className="bg-blue-50 rounded-full p-4 mb-4 text-primary">
-                  {categoryIcons[category] || categoryIcons.default}
+        
+        {loadingCategories ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map((index) => (
+              <div key={index} className="bg-gray-100 animate-pulse rounded-xl h-32"></div>
+            ))}
+          </div>
+        ) : categories.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {categories.map((category, index) => (
+              <Link
+                key={index}
+                href={`/products?category=${encodeURIComponent(category.name || category)}`}
+                className="group"
+              >
+                <div className="bg-white rounded-xl shadow-sm p-6 h-full flex flex-col justify-center items-center transition-transform hover:shadow-md hover:-translate-y-1 border border-gray-100">
+                  <div className="bg-blue-50 rounded-full p-4 mb-4 text-primary">
+                    {categoryIcons[category.name || category] || categoryIcons.default}
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-800 group-hover:text-primary transition">
+                    {category.name || category}
+                  </h3>
                 </div>
-                <h3 className="text-lg font-medium text-gray-800 group-hover:text-primary transition">
-                  {category}
-                </h3>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-500">
+            No categories available at the moment.
+          </div>
+        )}
       </section>
 
       {/* Featured Products Slider Section */}

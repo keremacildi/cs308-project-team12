@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 export async function POST(request) {
     try {
@@ -29,32 +30,32 @@ export async function POST(request) {
         }));
 
         // Log the data being sent to backend
-        const backendData = {
+        const orderData = {
             delivery_address,
             order_items,
             total_price: total
         };
-        console.log('Sending to backend:', backendData);
+        console.log('Sending to backend:', orderData);
 
-        const response = await fetch('http://localhost:8000/api/orders/', {
+        // Get cookies
+        const cookieStore = cookies();
+        const allCookies = cookieStore.getAll();
+        const cookieHeader = allCookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+        // Make the request with cookies included
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
+                'Cookie': cookieHeader
             },
             credentials: 'include',
-            body: JSON.stringify(backendData),
+            body: JSON.stringify(orderData),
         });
 
-        console.log('Backend response status:', response.status);
-        
         if (!response.ok) {
             const errorData = await response.json();
-            console.error('Backend error response:', errorData);
-            return NextResponse.json(
-                { error: errorData.error || 'Failed to create order' },
-                { status: response.status }
-            );
+            throw new Error(errorData.error || errorData.detail || 'Failed to create order');
         }
 
         const data = await response.json();
@@ -63,7 +64,7 @@ export async function POST(request) {
     } catch (error) {
         console.error('Error creating order:', error);
         return NextResponse.json(
-            { error: 'Internal server error' },
+            { error: error.message || 'Internal server error' },
             { status: 500 }
         );
     }

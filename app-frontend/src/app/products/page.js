@@ -4,193 +4,423 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { debounce } from "lodash"; // Install lodash: npm install lodash
 import ProductCard from "../../components/ProductCard";
 import "../../styles/globals.css";
-import { mockFilters } from "../data/mock_data/filters";
-import { mockProducts } from "../data/mock_data/products";
+import { api } from "../../lib/api";
 
-const ITEMS_PER_PAGE = 30;
+const ITEMS_PER_PAGE = 12; // Changed to 12 for better grid layout
 
 const FilterSidebar = ({ onFilterChange = () => {} }) => {
+  // State for data
   const [categories, setCategories] = useState([]);
-  const [brands, setBrands] = useState([]);
-  const [sellers, setSellers] = useState([]);
   const [allProducts, setAllProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
+  
+  // UI state
   const [currentPage, setCurrentPage] = useState(1);
-  const [filters, setFilters] = useState({ category: [], brand: [], seller: [] });
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  
+  // Filter and sort state
+  const [filters, setFilters] = useState({ category: [], price: [0, Infinity] });
   const [sortBy, setSortBy] = useState("");
-
+  const [priceRange, setPriceRange] = useState({ min: 0, max: 5000 });
+  
   const searchParams = useSearchParams();
   const router = useRouter();
-
-  // On mount, load your initial data
+  
+  // Fetch all data on mount
   useEffect(() => {
-    setCategories(mockFilters.categories);
-    setBrands(mockFilters.brands);
-    setSellers(mockFilters.sellers);
-    setAllProducts(mockProducts.product);
-    setFilteredProducts(mockProducts.product);
+    const fetchAllData = async () => {
+      try {
+        setLoadingCategories(true);
+        setLoadingProducts(true);
+        
+        // Parallel data fetching for better performance
+        const [categoriesData, productsData] = await Promise.all([
+          api.categories.list(),
+          api.products.list()
+        ]);
+        
+        setCategories(categoriesData || []);
+        setAllProducts(productsData || []);
+        
+        // Set initial filtered products 
+        setFilteredProducts(productsData || []);
+        
+        // Calculate price range from products data
+        if (productsData && productsData.length > 0) {
+          const prices = productsData.map(p => parseFloat(p.price));
+          const minPrice = Math.floor(Math.min(...prices));
+          const maxPrice = Math.ceil(Math.max(...prices));
+          setPriceRange({ min: minPrice, max: maxPrice });
+          // Update filter price range
+          setFilters(prev => ({ ...prev, price: [minPrice, maxPrice] }));
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setCategories([]);
+        setAllProducts([]);
+      } finally {
+        setLoadingCategories(false);
+        setLoadingProducts(false);
+      }
+    };
+    
+    fetchAllData();
   }, []);
 
-  // On mount, check for a category query parameter and apply it
+  // Apply URL params as filters on mount/URL change
   useEffect(() => {
     const categoryQuery = searchParams.get("category");
     if (categoryQuery) {
-      setFilters((prev) => ({
+      setFilters(prev => ({
         ...prev,
-        category: [categoryQuery],
+        category: [categoryQuery]
+      }));
+    }
+    
+    const sort = searchParams.get("sort");
+    if (sort) {
+      setSortBy(sort);
+    }
+    
+    const minPrice = searchParams.get("minPrice");
+    const maxPrice = searchParams.get("maxPrice");
+    if (minPrice || maxPrice) {
+      setFilters(prev => ({
+        ...prev,
+        price: [
+          minPrice ? parseInt(minPrice) : prev.price[0],
+          maxPrice ? parseInt(maxPrice) : prev.price[1]
+        ]
       }));
     }
   }, [searchParams]);
 
+  // Apply filtering and sorting on the frontend
   useEffect(() => {
-    let filtered = allProducts.filter((product) => {
-      return (
-        (filters.category.length === 0 || filters.category.includes(product.category)) &&
-        (filters.brand.length === 0 || filters.brand.includes(product.brand)) &&
-        (filters.seller.length === 0 || filters.seller.includes(product.seller))
-      );
+    if (!allProducts || allProducts.length === 0) {
+      setFilteredProducts([]);
+      return;
+    }
+    
+    console.log('Applying frontend filters:', filters);
+    console.log('Sorting by:', sortBy);
+    
+    // Apply all filters in one pass
+    let filtered = allProducts.filter(product => {
+      const price = parseFloat(product.price);
+      
+      // Handle category matching for both category strings and objects
+      const categoryMatch = filters.category.length === 0 || 
+        filters.category.some(filterCategory => {
+          // Check if the product category is an object with id and name
+          if (product.category && typeof product.category === 'object' && product.category.name) {
+            return product.category.name === filterCategory;
+          }
+          // Check if product.category is directly a string
+          return product.category === filterCategory;
+        });
+      
+      const priceMatch = price >= filters.price[0] && price <= filters.price[1];
+      
+      return categoryMatch && priceMatch;
     });
 
-    if (sortBy === "price-lh") {
-      filtered = filtered.sort((a, b) => a.price - b.price);
-    } else if (sortBy === "rating-lh") {
-      filtered = filtered.sort((a, b) => a.rating - b.rating);
-    } else if (sortBy === "price-hl") {
-      filtered = filtered.sort((a, b) => b.price - a.price);
-    } else if (sortBy === "rating-hl") {  
-      filtered = filtered.sort((a, b) => b.rating - a.rating);
+    // Apply sorting
+    if (sortBy) {
+      console.log('Sorting products on the frontend');
+      filtered = [...filtered]; // Create a copy to avoid mutation issues
+      
+      switch(sortBy) {
+        case "price-lh":
+          filtered.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+          break;
+        case "price-hl":
+          filtered.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+          break;
+        case "rating-lh":
+          filtered.sort((a, b) => (a.rating || 0) - (b.rating || 0));
+          break;
+        case "rating-hl":
+          filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+          break;
+        case "name-az":
+          filtered.sort((a, b) => a.title.localeCompare(b.title));
+          break;
+        case "name-za":
+          filtered.sort((a, b) => b.title.localeCompare(a.title));
+          break;
+        default:
+          // No sorting
+          break;
+      }
     }
+    
     setFilteredProducts(filtered);
-    setCurrentPage(1);
-  }, [filters, allProducts, sortBy]);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [filters, sortBy, allProducts]);
 
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
 
-  const updateURL = debounce((updatedFilters) => {
-    if (!updatedFilters || !searchParams) return;
+  // Update URL with filter parameters (debounced to avoid too many history entries)
+  const updateURL = debounce((updatedFilters, updatedSort) => {
+    if (!searchParams) return;
     const params = new URLSearchParams(searchParams.toString());
 
+    // Update category in URL
     if (updatedFilters.category.length > 0) {
       params.set("category", updatedFilters.category[0]);
     } else {
       params.delete("category");
     }
-
-    if (updatedFilters.brand.length > 0) {
-      params.set("brand", updatedFilters.brand.join(","));
+    
+    // Update price range in URL
+    if (updatedFilters.price[0] > priceRange.min) {
+      params.set("minPrice", updatedFilters.price[0]);
     } else {
-      params.delete("brand");
+      params.delete("minPrice");
     }
-
-    if (updatedFilters.seller.length > 0) {
-      params.set("seller", updatedFilters.seller.join(","));
+    
+    if (updatedFilters.price[1] < priceRange.max) {
+      params.set("maxPrice", updatedFilters.price[1]);
     } else {
-      params.delete("seller");
+      params.delete("maxPrice");
+    }
+    
+    // Update sort in URL
+    if (updatedSort) {
+      params.set("sort", updatedSort);
+    } else {
+      params.delete("sort");
     }
 
     router.push(`?${params.toString()}`);
     onFilterChange(updatedFilters);
   }, 500);
 
+  // Handle filter changes
   const handleFilterChange = (type, value) => {
-    setFilters((prev) => {
+    setFilters(prev => {
       let newFilters = { ...prev };
       if (type === "category") {
-        newFilters.category = prev.category.includes(value)
-          ? prev.category.filter((c) => c !== value)
-          : [...prev.category, value];
-      } else if (type === "brand") {
-        newFilters.brand = prev.brand.includes(value)
-          ? prev.brand.filter((b) => b !== value)
-          : [...prev.brand, value];
-      } else if (type === "seller") {
-        newFilters.seller = prev.seller.includes(value)
-          ? prev.seller.filter((s) => s !== value)
-          : [...prev.seller, value];
+        // Extract category name if value is an object
+        const categoryValue = typeof value === 'object' && value.name ? value.name : value;
+        
+        newFilters.category = prev.category.includes(categoryValue)
+          ? prev.category.filter(c => c !== categoryValue)
+          : [...prev.category, categoryValue];
+      } else if (type === "price") {
+        newFilters.price = value;
       }
-      updateURL(newFilters);
+      updateURL(newFilters, sortBy);
       return newFilters;
     });
   };
 
+  // Handle sort changes
+  const handleSortChange = (value) => {
+    setSortBy(value);
+    updateURL(filters, value);
+  };
+
+  // Handle pagination
   const handlePageChange = (page) => {
     if (page < 1 || page > totalPages) return;
     setCurrentPage(page);
+    window.scrollTo(0, 0); // Scroll to top when changing pages
   };
 
+  // Get products for current page
   const displayedProducts = filteredProducts.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
   return (
-    <div className="flex">  
-      <div className="w-64 sticky top-0 h-screen overflow-y-auto p-4 border-r bg-blue-600 border-blue-600">
-        <h2 className="text-lg font-semibold">Filters</h2>
-        <div className="mt-4">
-          <h3 className="text-md font-semibold">Sort By</h3>
-          <select className="w-full p-2 mt-2" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="">None</option>
-            <option value="price-lh">Price (Low to High)</option>
-            <option value="price-hl">Price (High to Low)</option>
-            <option value="rating-lh">Rating (Low to High)</option>
-            <option value="rating-hl">Rating (High to Low)</option>
+    <div className="flex flex-col md:flex-row min-h-screen bg-gray-100">  
+      {/* Filter sidebar */}
+      <div className="w-full md:w-64 md:sticky md:top-16 md:h-screen overflow-y-auto p-4 bg-white shadow-md">
+        <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Filters</h2>
+        
+        {/* Sort options */}
+        <div className="mb-6">
+          <h3 className="text-md font-semibold text-gray-700 mb-2">Sort By</h3>
+          <select 
+            className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={sortBy} 
+            onChange={(e) => handleSortChange(e.target.value)}
+          >
+            <option value="">Recommended</option>
+            <option value="price-lh">Price: Low to High</option>
+            <option value="price-hl">Price: High to Low</option>
+            <option value="rating-hl">Highest Rated</option>
+            <option value="name-az">Name: A to Z</option>
+            <option value="name-za">Name: Z to A</option>
           </select>
         </div>
-        <div className="mt-4">
-          <h3 className="text-md font-semibold">Categories</h3>
-          {categories.map((cat) => (
-            <label key={cat.id} className="block">
-              <input
-                type="checkbox"
-                value={cat.name}
-                checked={filters.category.includes(cat.name)}
-                onChange={() => handleFilterChange("category", cat.name)}
-                className="mr-2"
-              />
-              {cat.name}
-            </label>
-          ))}
+        
+        {/* Price range filter */}
+        <div className="mb-6">
+          <h3 className="text-md font-semibold text-gray-700 mb-2">Price Range</h3>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-600">${filters.price[0]}</span>
+            <span className="text-sm text-gray-600">${filters.price[1]}</span>
+          </div>
+          <input
+            type="range"
+            min={priceRange.min}
+            max={priceRange.max}
+            value={filters.price[0]}
+            onChange={(e) => handleFilterChange("price", [parseInt(e.target.value), filters.price[1]])}
+            className="w-full"
+          />
+          <input
+            type="range"
+            min={priceRange.min}
+            max={priceRange.max}
+            value={filters.price[1]}
+            onChange={(e) => handleFilterChange("price", [filters.price[0], parseInt(e.target.value)])}
+            className="w-full"
+          />
+        </div>
+        
+        {/* Category filters */}
+        <div className="mb-6">
+          <h3 className="text-md font-semibold text-gray-700 mb-2">Categories</h3>
+          {loadingCategories ? (
+            <div className="space-y-2">
+              {[1, 2, 3, 4].map((index) => (
+                <div key={index} className="h-6 bg-gray-200 animate-pulse rounded"></div>
+              ))}
+            </div>
+          ) : categories.length > 0 ? (
+            <div className="max-h-60 overflow-y-auto pr-2">
+              {categories.map((cat, index) => {
+                // Determine category name and value based on the category format
+                const categoryName = typeof cat === 'object' && cat.name ? cat.name : cat;
+                const categoryId = typeof cat === 'object' && cat.id ? cat.id : null;
+                
+                return (
+                  <label key={categoryId || index} className="flex items-center mb-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                    <input
+                      type="checkbox"
+                      value={categoryName}
+                      checked={filters.category.includes(categoryName)}
+                      onChange={() => handleFilterChange("category", cat)}
+                      className="mr-2 form-checkbox h-4 w-4 text-blue-600"
+                    />
+                    <span className="text-gray-700">{categoryName}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">No categories available</p>
+          )}
+        </div>
+        
+        {/* Products count */}
+        <div className="mt-4 text-sm text-gray-600">
+          Showing {filteredProducts.length} products
         </div>
       </div>
-      <div className="p-4 flex-1">
-        <h1 className="text-xl font-semibold">Products</h1>
-        <div className="grid grid-cols-3 gap-4">
-          {displayedProducts.map((product, index) => (
-            <ProductCard
-              key={`${product.id}-${index}`}  // Use both id and index for a unique key
-              id={product.id}
-              title={product.title}
-              price={product.price}
-              image={product.image}
-              stock={product.stock}  // Pass the stock property here
-            />
-          ))}
-        </div>
-        {totalPages > 1 && (
-          <div className="mt-4 flex justify-center items-center gap-2">
+      
+      {/* Products grid */}
+      <div className="flex-1 p-4">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">All Products</h1>
+        
+        {/* Loading state */}
+        {loadingProducts ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="bg-white rounded-lg shadow-md h-72 animate-pulse">
+                <div className="h-40 bg-gray-200 rounded-t-lg"></div>
+                <div className="p-4">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredProducts.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {displayedProducts.map((product, index) => (
+              <ProductCard
+                key={`${product.id || index}-${index}`}
+                id={product.id}
+                title={product.title}
+                price={product.price}
+                image={product.image}
+                stock={product.stock}
+                rating={product.rating}
+                totalRating={product.total_ratings}
+              />
+              
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+            <svg className="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <p className="text-xl mb-2">No products match your filters</p>
+            <p>Try adjusting your search criteria or clearing filters</p>
+            <button 
+              onClick={() => {
+                setFilters({ category: [], price: [priceRange.min, priceRange.max] });
+                setSortBy("");
+                router.push("/products");
+              }}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+            >
+              Clear All Filters
+            </button>
+          </div>
+        )}
+        
+        {/* Pagination */}
+        {!loadingProducts && filteredProducts.length > ITEMS_PER_PAGE && (
+          <div className="mt-8 flex justify-center items-center gap-2">
             <button
               onClick={() => handlePageChange(currentPage - 1)}
               disabled={currentPage === 1}
-              className="px-4 py-2 bg-blue-600 rounded disabled:opacity-50"
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded disabled:opacity-50 hover:bg-gray-300 transition"
             >
               Previous
             </button>
-            {Array.from({ length: totalPages }).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => handlePageChange(i + 1)}
-                className={`px-4 py-2 rounded ${
-                  currentPage === i + 1 ? "bg-blue-600 text-white" : "bg-gray-600"
-                }`}
-              >
-                {i + 1}
-              </button>
-            ))}
+            
+            {/* Show limited page numbers with ellipsis */}
+            {Array.from({ length: Math.min(5, totalPages) }).map((_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              
+              return (
+                <button
+                  key={i}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={`px-4 py-2 rounded ${
+                    currentPage === pageNum 
+                      ? "bg-blue-600 text-white" 
+                      : "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                  } transition`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            
             <button
               onClick={() => handlePageChange(currentPage + 1)}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 bg-blue-600 rounded disabled:opacity-50"
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded disabled:opacity-50 hover:bg-gray-300 transition"
             >
               Next
             </button>

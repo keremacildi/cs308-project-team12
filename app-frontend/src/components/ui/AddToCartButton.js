@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { ShoppingCart, Check, AlertTriangle } from "lucide-react";
+import { ShoppingCart, Check, AlertTriangle, AlertCircle } from "lucide-react";
 
-export default function AddToCartButton({ product, disabled }) {
+export default function AddToCartButton({ product, disabled, maxQuantity }) {
   const [buttonState, setButtonState] = useState('idle'); // idle, adding, added, error
   const [quantity, setQuantity] = useState(0);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   // Check if product exists in cart and update quantity on mount
   useEffect(() => {
@@ -22,12 +23,22 @@ export default function AddToCartButton({ product, disabled }) {
     }
   }, [product.id]);
 
+  // Check if adding more would exceed stock
+  const wouldExceedStock = maxQuantity !== undefined && quantity >= maxQuantity;
+
   const handleAddToCart = () => {
     // Check if we're in the browser environment
     if (typeof window === "undefined") return;
     
     // Prevent adding if out of stock or button disabled
     if (disabled || product.stock === 0) return;
+
+    // Check for stock limit
+    if (wouldExceedStock) {
+      setErrorMessage(`Cannot add more - only ${maxQuantity} available`);
+      setTimeout(() => setErrorMessage(null), 3000);
+      return;
+    }
 
     setButtonState('adding');
     
@@ -39,6 +50,17 @@ export default function AddToCartButton({ product, disabled }) {
       // Check if the product already exists in the cart
       const productIndex = cart.findIndex((item) => item.id === product.id);
       if (productIndex !== -1) {
+        // Check if adding more would exceed stock
+        if (maxQuantity !== undefined && cart[productIndex].quantity >= maxQuantity) {
+          setButtonState('error');
+          setErrorMessage(`Cannot add more - only ${maxQuantity} available`);
+          setTimeout(() => {
+            setButtonState('idle');
+            setErrorMessage(null);
+          }, 3000);
+          return;
+        }
+
         // Increase quantity if already in cart
         cart[productIndex].quantity += 1;
         setQuantity(cart[productIndex].quantity);
@@ -57,13 +79,17 @@ export default function AddToCartButton({ product, disabled }) {
     } catch (error) {
       console.error("Error saving to cart:", error);
       setButtonState('error');
-      setTimeout(() => setButtonState('idle'), 2000);
+      setErrorMessage("Failed to add to cart");
+      setTimeout(() => {
+        setButtonState('idle');
+        setErrorMessage(null);
+      }, 2000);
     }
   };
 
   // Determine button appearance based on state
   const buttonStyles = {
-    idle: disabled 
+    idle: disabled || wouldExceedStock
       ? "bg-gray-200 text-gray-500 cursor-not-allowed" 
       : "bg-primary text-white hover:bg-blue-600 active:bg-blue-700",
     adding: "bg-primary text-white",
@@ -78,6 +104,11 @@ export default function AddToCartButton({ product, disabled }) {
           <>
             <AlertTriangle className="w-5 h-5 mr-2" />
             <span>Out of Stock</span>
+          </>
+        ) : wouldExceedStock ? (
+          <>
+            <AlertCircle className="w-5 h-5 mr-2" />
+            <span>Max Stock Reached</span>
           </>
         ) : (
           <>
@@ -105,19 +136,27 @@ export default function AddToCartButton({ product, disabled }) {
     error: (
       <>
         <AlertTriangle className="w-5 h-5 mr-2" />
-        <span>Failed to Add</span>
+        <span>{errorMessage || "Failed to Add"}</span>
       </>
     )
   };
 
   return (
-    <button
-      onClick={handleAddToCart}
-      disabled={disabled || buttonState === 'adding'}
-      className={`flex items-center justify-center py-2.5 px-4 font-medium rounded-lg transition-colors duration-200 ${buttonStyles[buttonState]}`}
-      aria-label={disabled ? "Out of Stock" : "Add to Cart"}
-    >
-      {buttonContent[buttonState]}
-    </button>
+    <div className="relative">
+      <button
+        onClick={handleAddToCart}
+        disabled={disabled || wouldExceedStock || buttonState === 'adding'}
+        className={`w-full flex items-center justify-center py-2.5 px-4 font-medium rounded-lg transition-colors duration-200 ${buttonStyles[buttonState]}`}
+        aria-label={disabled ? "Out of Stock" : wouldExceedStock ? "Max Stock Reached" : "Add to Cart"}
+      >
+        {buttonContent[buttonState]}
+      </button>
+      
+      {maxQuantity !== undefined && quantity > 0 && (
+        <div className="text-xs text-gray-500 mt-1 text-center">
+          {quantity} of {maxQuantity} in cart
+        </div>
+      )}
+    </div>
   );
 }
