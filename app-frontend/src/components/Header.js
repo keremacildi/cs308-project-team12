@@ -102,17 +102,21 @@ export default function Header() {
               className="w-full md:w-64 bg-white/10 text-white placeholder-blue-100 px-4 py-2 rounded-full border border-blue-400 focus:outline-none focus:ring-2 focus:ring-white"
             />
             <button 
-              type="submit" 
-              className="absolute right-2 text-blue-100 hover:text-white transition"
-              aria-label="Search"
+              onClick={handleLogout}
+              className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors flex items-center"
             >
-              <Search className="w-5 h-5" />
+              <LogOut className="w-4 h-4 mr-1" />
+              Logout
             </button>
-          </div>
-        </form>
+          ) : (
+            <Link href="/login" className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors">
+              Login
+            </Link>
+          )}
+        </nav>
         
         {/* Mobile Navigation */}
-        <div className="flex md:hidden items-center space-x-4 order-2 md:order-3">
+        <div className="flex md:hidden items-center space-x-4 order-2">
           <Link href="/cart" className="text-white" aria-label="Cart">
             <ShoppingCart className="w-6 h-6" />
           </Link>

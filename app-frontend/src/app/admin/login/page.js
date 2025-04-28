@@ -86,7 +86,7 @@ export default function AdminLoginPage() {
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import styles from "@/styles/auth.module.css";
+import styles from "../../../styles/auth.module.css";
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");

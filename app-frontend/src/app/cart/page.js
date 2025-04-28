@@ -2,10 +2,12 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import CartItem from "./CartItem";
+import { AlertTriangle } from "lucide-react";
 
 export default function CartPage() {
     const [cart, setCart] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [errorMessage, setErrorMessage] = useState(null);
 
     // Load cart from localStorage
     useEffect(() => {
@@ -14,11 +16,22 @@ export default function CartPage() {
         setLoading(false);
     }, []);
 
-    // Update quantity function
+    // Update quantity function with stock limit validation
     const updateQuantity = (id, newQuantity) => {
         const updatedCart = cart.map((item) => {
             if (item.id === id) {
-                const quantity = Math.min(Math.max(newQuantity, 1), item.stock); // Limit between 1 and available stock
+                // Get the current stock amount (from either field)
+                const stockAmount = item.quantity_in_stock || item.stock || 0;
+                
+                // Ensure quantity is between 1 and available stock
+                if (newQuantity > stockAmount) {
+                    // Show error message when trying to exceed stock
+                    setErrorMessage(`Only ${stockAmount} item(s) available for "${item.title}"`);
+                    setTimeout(() => setErrorMessage(null), 3000);
+                    newQuantity = stockAmount;
+                }
+                
+                const quantity = Math.max(1, Math.min(newQuantity, stockAmount));
                 return { ...item, quantity };
             }
             return item;
@@ -40,7 +53,7 @@ export default function CartPage() {
         localStorage.removeItem("cart");
     };
 
-    // Total price calculation
+    // Total price calculation - ensure we handle non-number price values
     const totalPrice = cart.reduce(
         (sum, item) => sum + (parseFloat(item.price) || 0) * item.quantity,
         0
@@ -86,6 +99,12 @@ export default function CartPage() {
         );
     }
 
+    // Check for out of stock items and items with reduced availability
+    const stockIssues = cart.filter(item => {
+        const stockAmount = item.quantity_in_stock || item.stock || 0;
+        return stockAmount < item.quantity || stockAmount === 0;
+    });
+
     return (
         <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
             <div className="max-w-7xl mx-auto">
@@ -96,7 +115,39 @@ export default function CartPage() {
                     </p>
                 </div>
 
-                <div className="mt-12 lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
+                {/* Stock Warning Messages */}
+                {stockIssues.length > 0 && (
+                    <div className="my-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                        <div className="flex items-center text-amber-800 mb-2">
+                            <AlertTriangle className="w-5 h-5 mr-2" />
+                            <span className="font-medium">Availability issues:</span>
+                        </div>
+                        <ul className="list-disc pl-10 text-sm text-amber-700 space-y-1">
+                            {stockIssues.map(item => {
+                                const stockAmount = item.quantity_in_stock || item.stock || 0;
+                                return (
+                                    <li key={`warning-${item.id}`}>
+                                        {stockAmount === 0 
+                                            ? `"${item.title}" is no longer available` 
+                                            : `Only ${stockAmount} units of "${item.title}" are available`}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </div>
+                )}
+
+                {/* Error Message */}
+                {errorMessage && (
+                    <div className="my-4 p-4 bg-red-50 border border-red-200 rounded-md">
+                        <div className="flex items-center text-red-800">
+                            <AlertTriangle className="w-5 h-5 mr-2" />
+                            <span>{errorMessage}</span>
+                        </div>
+                    </div>
+                )}
+
+                <div className="mt-8 lg:grid lg:grid-cols-12 lg:gap-x-12 lg:items-start">
                     <div className="lg:col-span-7">
                         <div className="space-y-4">
                             {cart.map((item) => (
@@ -150,9 +201,10 @@ export default function CartPage() {
                                 <div className="mt-6">
                                     <Link
                                         href="/checkout"
-                                        className="w-full flex justify-center items-center px-6 py-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                                        className={`w-full flex justify-center items-center px-6 py-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white ${stockIssues.length > 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 transition-colors'}`}
+                                        onClick={(e) => stockIssues.length > 0 && e.preventDefault()}
                                     >
-                                        Proceed to Checkout
+                                        {stockIssues.length > 0 ? 'Adjust Cart to Continue' : 'Proceed to Checkout'}
                                     </Link>
                                 </div>
                                 

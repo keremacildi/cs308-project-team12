@@ -10,7 +10,7 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
 
   // Check if product exists in cart and update quantity on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (isMounted) {
       try {
         const cart = JSON.parse(localStorage.getItem("cart") || "[]");
         const existingItem = cart.find(item => item.id === product.id);
@@ -28,7 +28,7 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
 
   const handleAddToCart = () => {
     // Check if we're in the browser environment
-    if (typeof window === "undefined") return;
+    if (!isMounted) return;
     
     // Prevent adding if out of stock or button disabled
     if (disabled || product.stock === 0) return;
@@ -49,6 +49,7 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
 
       // Check if the product already exists in the cart
       const productIndex = cart.findIndex((item) => item.id === product.id);
+      
       if (productIndex !== -1) {
         // Check if adding more would exceed stock
         if (maxQuantity !== undefined && cart[productIndex].quantity >= maxQuantity) {
@@ -63,10 +64,19 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
 
         // Increase quantity if already in cart
         cart[productIndex].quantity += 1;
+        // Make sure stock info is up to date
+        cart[productIndex].stock = stockAmount;
+        cart[productIndex].quantity_in_stock = stockAmount;
         setQuantity(cart[productIndex].quantity);
       } else {
         // Add product with initial quantity of 1
-        cart.push({ ...product, quantity: 1 });
+        cart.push({ 
+          ...product, 
+          quantity: 1,
+          // Ensure stock info is included and consistent
+          stock: stockAmount,
+          quantity_in_stock: stockAmount
+        });
         setQuantity(1);
       }
 
@@ -87,6 +97,9 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
     }
   };
 
+  // Check if current cart quantity is at stock limit
+  const isAtStockLimit = quantity >= stockAmount;
+
   // Determine button appearance based on state
   const buttonStyles = {
     idle: disabled || wouldExceedStock
@@ -100,7 +113,7 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
   const buttonContent = {
     idle: (
       <>
-        {disabled ? (
+        {isOutOfStock ? (
           <>
             <AlertTriangle className="w-5 h-5 mr-2" />
             <span>Out of Stock</span>
@@ -113,7 +126,7 @@ export default function AddToCartButton({ product, disabled, maxQuantity }) {
         ) : (
           <>
             <ShoppingCart className="w-5 h-5 mr-2" />
-            <span>{quantity > 0 ? `Add More (${quantity})` : "Add to Cart"}</span>
+            <span>{quantity > 0 ? `Add More (${quantity}/${stockAmount})` : "Add to Cart"}</span>
           </>
         )}
       </>

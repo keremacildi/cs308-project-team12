@@ -18,6 +18,7 @@ export default function HomePage() {
   // Auto-slide state
   const [currentSlide, setCurrentSlide] = useState(0);
   const [autoSlide, setAutoSlide] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   
   // Define how many products per slide (responsive)
   const [itemsPerSlide, setItemsPerSlide] = useState(3);
@@ -60,13 +61,13 @@ export default function HomePage() {
   // Auto-slide effect
   useEffect(() => {
     let interval;
-    if (autoSlide) {
+    if (autoSlide && isMounted) {
       interval = setInterval(() => {
         nextSlide();
       }, 5000);
     }
     return () => clearInterval(interval);
-  }, [autoSlide, currentSlide]);
+  }, [autoSlide, currentSlide, isMounted]);
   
   // Create slides based on items per slide
   const slides = [];

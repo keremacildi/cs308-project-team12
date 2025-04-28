@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { getImageUrl } from "../../utils/imageUtils";
+import apiClient from "../../utils/apiClient";
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -27,6 +29,14 @@ export default function CheckoutPage() {
         setCart(storedCart);
         setLoading(false);
     }, []);
+
+    const handleFormChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
 
     const handleCheckout = async (e) => {
         if (e) e.preventDefault();
@@ -324,17 +334,27 @@ export default function CheckoutPage() {
                                 <p className="text-sm text-gray-600">
                                     <span className="font-medium">Date:</span> {new Date(invoice.date).toLocaleDateString()}
                                 </p>
+                                <p className="text-sm text-gray-600 mt-2">
+                                    <span className="font-medium">Delivery Address:</span> {invoice.deliveryAddress}
+                                </p>
                             </div>
                             
                             <div className="space-y-3 my-6">
                                 {invoice.items.map((item) => (
                                     <div key={item.id} className="flex justify-between py-2 border-b border-gray-200">
                                         <div className="flex">
+                                            <div className="flex-shrink-0 w-12 h-12 bg-gray-100 rounded-md overflow-hidden mr-3">
+                                                <img 
+                                                    src={getImageUrl(item.image)} 
+                                                    alt={item.title}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            </div>
                                             <div className="ml-2">
                                                 <p className="text-sm font-medium text-gray-900">{item.title} <span className="text-gray-600">× {item.quantity}</span></p>
                                             </div>
                                         </div>
-                                        <p className="text-sm font-medium text-gray-900">${(item.price * item.quantity).toFixed(2)}</p>
+                                        <p className="text-sm font-medium text-gray-900">${(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
                                     </div>
                                 ))}
                             </div>
@@ -342,15 +362,15 @@ export default function CheckoutPage() {
                             <div className="border-t border-gray-200 pt-4">
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Subtotal</span>
-                                    <span className="text-gray-900">${calculateSubtotal().toFixed(2)}</span>
+                                    <span className="text-gray-900">${invoice.subtotal.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Shipping</span>
-                                    <span className="text-gray-900">${calculateShipping().toFixed(2)}</span>
+                                    <span className="text-gray-900">${invoice.shipping.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Tax</span>
-                                    <span className="text-gray-900">${calculateTax().toFixed(2)}</span>
+                                    <span className="text-gray-900">${invoice.tax.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-4 pt-4 border-t border-gray-200">
                                     <span className="text-lg font-bold text-gray-900">Total</span>
@@ -361,13 +381,39 @@ export default function CheckoutPage() {
                         
                         <p className="text-center text-gray-600 mb-6">A copy of your receipt has been sent to your email.</p>
                         
-                        <div className="flex justify-center">
+                        <div className="flex justify-center space-x-4">
                             <Link 
                                 href="/" 
                                 className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
                             >
                                 Return to Home
                             </Link>
+                            <Link 
+                                href="/orders" 
+                                className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                            >
+                                View My Orders
+                            </Link>
+                        </div>
+                        
+                        <div className="mt-4 flex justify-center">
+                            <button
+                                onClick={() => {
+                                    // Extract the numeric part of the order ID
+                                    let orderId = invoice.orderNumber;
+                                    console.log("Original order ID:", orderId, typeof orderId);
+                                    
+                                    // Don't convert the order ID, send it as is
+                                    // The backend has been updated to handle different formats
+                                    apiClient.orders.downloadInvoice(orderId);
+                                }}
+                                className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Download Invoice
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -503,6 +549,7 @@ export default function CheckoutPage() {
                                                 />
                                             </div>
                                         </div>
+                                        <p className="text-sm font-medium text-gray-900">${(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
                                     </div>
                                 )}
                             </div>

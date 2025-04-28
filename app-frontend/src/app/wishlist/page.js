@@ -19,7 +19,7 @@ export default function WishlistPage() {
             if (item.price > 50 && Math.random() > 0.7) { // Random discount simulation
                 setDiscountNotification({
                     id: item.id,
-                    title: item.name,
+                    title: item.title,
                     discount: 10, // 10% discount
                 });
             }

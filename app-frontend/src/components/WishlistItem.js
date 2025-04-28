@@ -23,8 +23,8 @@ export default function WishlistItem({ item, onRemove, onAddToCart }) {
                 className="rounded-xl object-cover"
             />
             <div className="text-center w-full">
-                <h3 className="text-xl font-bold text-[#4169e1] mb-2">{item.name}</h3>
-                <p className="text-base text-gray-800 m-0">${item.price.toFixed(2)}</p>
+                <h3 className="text-xl font-bold text-[#4169e1] mb-2">{item.title}</h3>
+                <p className="text-base text-gray-800 m-0">${typeof item.price === 'number' ? item.price.toFixed(2) : item.price}</p>
                 <p className="text-base text-gray-800 m-0">Stock: {item.stock > 0 ? item.stock : "Out of Stock"}</p>
             </div>
             <button

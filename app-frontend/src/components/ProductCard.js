@@ -104,13 +104,15 @@ export default function ProductCard({ id, title, price, image, stock, rating, ra
       )}
 
       {/* Product Image */}
-      <Link href={`/products/${id}`} className="block relative overflow-hidden pt-[75%]">
-        <img 
-          src={image || "/iphone.jpg"} 
-          alt={title}
-          className="absolute top-0 left-0 w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105" 
-        />
-      </Link>
+      <div className="block relative overflow-hidden pt-[75%]">
+        <Link href={`/products/${id}`} className="block absolute inset-0">
+          <img 
+            src={getImageUrl(image)} 
+            alt={title}
+            className="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105" 
+          />
+        </Link>
+        </div>
 
       {/* Product Info */}
       <div className="p-4 flex flex-col flex-grow">
@@ -177,7 +179,7 @@ export default function ProductCard({ id, title, price, image, stock, rating, ra
             >
               <Heart className={`w-4 h-4 ${isInWishlist ? "fill-pink-600 text-pink-600" : ""}`} />
               <span className="text-sm font-medium">Wishlist</span>
-            </button>
+          </button>
           </div>
         </div>
       </div>

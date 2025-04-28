@@ -170,8 +170,6 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
     // Update category in URL
     if (updatedFilters.category.length > 0) {
       params.set("category", updatedFilters.category[0]);
-    } else {
-      params.delete("category");
     }
     
     // Update price range in URL
@@ -194,8 +192,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
       params.delete("sort");
     }
 
-    router.push(`?${params.toString()}`);
-    onFilterChange(updatedFilters);
+    router.push(`/products?${params.toString()}`);
   }, 500);
 
   // Handle filter changes
@@ -235,6 +232,22 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="text-red-600 text-xl">{error}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-gray-100">  
@@ -424,11 +437,12 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
             >
               Next
             </button>
+                </nav>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
-};
-
-export default FilterSidebar;
+}

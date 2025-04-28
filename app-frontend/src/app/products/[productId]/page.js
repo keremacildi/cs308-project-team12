@@ -22,26 +22,9 @@ export default function ProductDetail({ params }) {
       <p style={styles.detail}><strong>Rating:</strong> {product.rating}</p>
       
       {/* Add to Cart button */}
-      <AddToCartButton product={product} />
+      <div className="mt-8">
+        <AddToCartButton product={product} />
+      </div>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    maxWidth: '600px',
-    margin: '40px auto',
-    padding: '20px',
-    border: '1px solid #ddd',
-    borderRadius: '8px',
-  },
-  image: {
-    width: '100%',
-    height: 'auto',
-    marginBottom: '20px',
-  },
-  detail: {
-    fontSize: '16px',
-    margin: '8px 0',
-  },
-};
