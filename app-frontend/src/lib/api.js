@@ -49,6 +49,13 @@ export const api = {
       return handleResponse(response, requestInfo);
     },
     
+    comments: async (id) => {
+      const url = `${API_URL}/api/products/${id}/comments/`;
+      const requestInfo = logRequest('GET', url);
+      const response = await fetch(url);
+      return handleResponse(response, requestInfo);
+    },
+    
     reviews: {
       get: async (id) => {
         const url = `${API_URL}/api/products/${id}/reviews/`;

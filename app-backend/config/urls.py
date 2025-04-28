@@ -13,6 +13,7 @@ urlpatterns = [
     # Products
     path('api/products/all/', views.get_all_products, name='api_get_all_products'),
     path('api/products/<int:id>/', views.get_product_detail, name='api_product_detail'),
+    path('api/products/<int:product_id>/comments/', views.get_product_comments, name='api_product_comments'),
 
     # Filters
     path('api/categories/', views.get_categories, name='api_categories'),
@@ -24,7 +25,6 @@ urlpatterns = [
     path('api/orders/<int:order_id>/cancel/', views.cancel_order, name='api_cancel_order'),
     path('api/orders/<int:order_id>/refund/', views.refund_order, name='api_refund_order'),
     path('api/orders/<int:order_id>/invoice/', views.download_invoice, name='api_download_invoice'),
-    path('api/orders/<str:order_id>/invoice/', views.download_invoice, name='api_download_invoice_plain_str'),
     
     # Auth
     path('api/auth/login/', csrf_exempt(views.login_api), name='api_login'),
@@ -36,6 +36,9 @@ urlpatterns = [
     path('api/auth/change-password/', views.change_password, name='api_change_password'),
     path('api/auth/check/', views.check_auth, name='api_check_auth'),
 
+    # Ratings & Comments - combined view functions that handle different HTTP methods
+    path('api/ratings/', views.ratings_api, name='api_ratings'),
+    path('api/comments/', views.comments_api, name='api_comments'),
 ]
 
 # Serve media files in development

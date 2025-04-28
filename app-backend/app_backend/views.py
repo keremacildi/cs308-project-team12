@@ -20,7 +20,7 @@ from rest_framework.generics import ListAPIView, RetrieveAPIView
 from .permissions import IsStaff
 from django.db import models
 import smtplib
-
+from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Product,  Order, OrderItem, Rating,
     Comment,    
@@ -30,12 +30,16 @@ from .serializers import (
     OrderSerializer,  
     ProductSerializer,   
     CategorySerializer,   UserCreateSerializer,
-    UserSerializer, UserUpdateSerializer
+    UserSerializer, UserUpdateSerializer,RatingSerializer,CommentSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
 import os
 from decimal import Decimal
+import smtplib
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- Home View ---
 def home(request):
@@ -48,7 +52,7 @@ def get_all_products(request):
     Get all products.
     """
     products = Product.objects.all()
-    serializer = ProductSerializer(products, many=True)
+    serializer = ProductSerializer(products, many=True, context={'request': request})
     return Response(serializer.data)
 
 @api_view(['GET'])
@@ -59,7 +63,7 @@ def get_product_detail(request, id):
     """
     try:
         product = Product.objects.get(id=id)
-        serializer = ProductSerializer(product)
+        serializer = ProductSerializer(product, context={'request': request})
         return Response(serializer.data)
     except Product.DoesNotExist:
         return Response(
@@ -104,13 +108,6 @@ def generate_invoice_pdf(order):
     p.drawString(50, 700, f"Username: {order.user.username}")
     p.drawString(50, 685, f"Email: {order.user.email}")
     
-    # Add delivery address if available
-    delivery = Delivery.objects.filter(order=order).first()
-    if delivery and delivery.delivery_address:
-        p.setFont("Helvetica-Bold", 12)
-        p.drawString(300, 730, "Ship To:")
-        p.setFont("Helvetica", 10)
-        p.drawString(300, 715, f"{delivery.delivery_address}")
     
     # Add table headers
     p.setFont("Helvetica-Bold", 10)
@@ -179,35 +176,65 @@ def generate_invoice_pdf(order):
     p.save()
     buffer.seek(0)
     return buffer
+import smtplib
+from django.core.mail import EmailMessage
 
-def send_invoice_email(order):
-    pdf = generate_invoice_pdf(order)
-    
-    # Configure SMTP settings for ProtonMail
-    smtp_server = "smtp.proton.me"
-    smtp_port = 587
-    smtp_username = "cs308demo@proton.me"  # Replace with actual email
-    smtp_password = "123456789"  # Replace with actual password
-    
-    # Create and configure email message
+def send_invoice_email(pdf, order):
+    pdf.seek(0)
     email = EmailMessage(
-        f"Invoice for Order #{order.id}",
-        "Please find your invoice attached.",
-        from_email=smtp_username,
-        to=[order.user.email]
+        subject=f"Invoice for Order #{order.id}",
+        body="Please find your invoice attached.",
+        from_email="postmaster@sandbox0769910aa82f4c699d5b1ff8211a21a1.mailgun.org",
+        to=["batuhan.baykalhhh@gmail.com"],
     )
-    email.attach(f"invoice_order_{order.id}.pdf", pdf.read(), "application/pdf")
-    
-    # Send email via ProtonMail SMTP
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
+    email.attach(
+        f"invoice_order_{order.id}.pdf",
+        pdf.read(),
+        "application/pdf"
+    )
+
+    # This gives you an email.message.Message instance
+    std_msg = email.message()  
+
+    with smtplib.SMTP("smtp.mailgun.org", 2525) as server:
+        server.set_debuglevel(1)
+        server.ehlo()
         server.starttls()
-        server.login(smtp_username, smtp_password)
-        server.send_message(email)
+        server.ehlo()
+        server.login(
+            "postmaster@sandbox0769910aa82f4c699d5b1ff8211a21a1.mailgun.org",
+            os.getenv("mailgun")
+        )
+        # Send the *standard* message, not the Django wrapper
+        server.send_message(std_msg)
+
+    print(f"Email sent successfully for order {order.id}")
+    return True
+
+
+
+    # Send email via ProtonMail SMTP
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def download_invoice(request, order_id):
     try:
+        # Get user ID from request data
+        user_id = request.data.get('user') or request.query_params.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'User ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {user_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
         # Try to convert string order_id to integer if needed
         try:
             if isinstance(order_id, str):
@@ -220,7 +247,7 @@ def download_invoice(request, order_id):
             pass
             
         # Get the order, ensuring it belongs to the requesting user
-        order = get_object_or_404(Order, id=order_id, user=request.user)
+        order = get_object_or_404(Order, id=order_id, user=user)
         
         # Check if invoice already exists
         if order.invoice_pdf and order.invoice_pdf.name:
@@ -246,9 +273,25 @@ def download_invoice(request, order_id):
 
 # --- Order Cancellation and Refund ---
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def cancel_order(request, order_id):
-    order = get_object_or_404(Order, pk=order_id, user=request.user)
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
+    order = get_object_or_404(Order, pk=order_id, user=user)
     if order.status != 'processing':
         return Response(
             {'error': 'Order cannot be cancelled.'},
@@ -259,9 +302,25 @@ def cancel_order(request, order_id):
     return Response({'message': 'Order cancelled successfully'})
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def refund_order(request, order_id):
-    order = get_object_or_404(Order, pk=order_id, user=request.user)
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
+    order = get_object_or_404(Order, pk=order_id, user=user)
     if order.status != 'delivered':
         return Response(
             {'error': 'Order cannot be refunded.'},
@@ -288,95 +347,146 @@ def refund_order(request, order_id):
     return Response({'message': 'Order refunded successfully'})
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def create_order(request):
+    """
+    Create a new order with items.
+    Expected format:
+    {
+        "user": user_id,
+        "delivery_address": "address string",
+        "order_items": [
+            {
+                "product": product_id,
+                "quantity": quantity,
+                "price_at_purchase": price
+            },
+            ...
+        ],
+        "total_price": total_price
+    }
+    """
     try:
-        print("Received order creation request:", request.data)  # Log the incoming request
+        print("Received order creation request:", request.data)
         
-        # Get order items either from cart or request data
-        if 'order_items' in request.data:
-            # Direct order creation
-            order_items = request.data['order_items']
-            delivery_address = request.data.get('delivery_address', '')
-            total_price = request.data.get('total_price', 0)
+        # Get user from request data
+        user_id = request.data.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'User ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
             
-            print("Processing direct order with items:", order_items)  # Log order items
-            
-            # Validate order items
-            if not order_items or len(order_items) == 0:
-                return Response({'error': 'Order items are required'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Check stock availability
-            for item in order_items:
-                try:
-                    product = Product.objects.get(id=item['product'])
-                    if item['quantity'] > product.quantity_in_stock:
-                        return Response(
-                            {'error': f'Not enough stock for {product.title}'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                except Product.DoesNotExist:
-                    return Response(
-                        {'error': f'Product with ID {item["product"]} not found'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-        else:
-            # Cart-based order creation
-            cart_items = ShoppingCartItem.objects.filter(user=request.user)
-            if not cart_items.exists():
-                return Response({'error': 'Cart is empty'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            order_items = []
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {user_id} not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get delivery address
+        delivery_address = request.data.get('delivery_address', '')
+        if not delivery_address:
+            return Response(
+                {'error': 'Delivery address is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get order items
+        order_items = request.data.get('order_items', [])
+        if not order_items or len(order_items) == 0:
+            return Response(
+                {'error': 'Order items are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get total price or calculate it
+        total_price = request.data.get('total_price', 0)
+        if not total_price:
+            # Calculate total if not provided
             total_price = 0
-            delivery_address = request.data.get('delivery_address', '')
+            for item in order_items:
+                price = float(item.get('price_at_purchase', 0))
+                quantity = int(item.get('quantity', 0))
+                total_price += price * quantity
+        
+        # Check stock availability for all items before creating the order
+        for item in order_items:
+            product_id = item.get('product')
+            quantity = int(item.get('quantity', 0))
             
-            for cart_item in cart_items:
-                if cart_item.quantity > cart_item.product.quantity_in_stock:
+            try:
+                product = Product.objects.get(id=product_id)
+                if quantity > product.quantity_in_stock:
                     return Response(
-                        {'error': f'Not enough stock for {cart_item.product.title}'},
+                        {'error': f'Not enough stock for {product.title}. Available: {product.quantity_in_stock}, Requested: {quantity}'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                total_price += cart_item.product.price * cart_item.quantity
-                order_items.append({
-                    'product': cart_item.product.id,
-                    'quantity': cart_item.quantity,
-                    'price_at_purchase': cart_item.product.price
-                })
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': f'Product with ID {product_id} not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Create the order
         order = Order.objects.create(
-            user=request.user,
+            user=user,
             total_price=total_price,
             status='processing'
         )
         
-        print("Created order:", order.id)  # Log order creation
+        print(f"Created order: {order.id}")
         
         # Create order items and reduce stock
         for item in order_items:
-            product = Product.objects.get(id=item['product'])
-            OrderItem.objects.create(
+            product_id = item.get('product')
+            quantity = int(item.get('quantity', 0))
+            price_at_purchase = item.get('price_at_purchase')
+            
+            # Convert price string to Decimal if needed
+            if isinstance(price_at_purchase, str):
+                price_at_purchase = Decimal(price_at_purchase)
+            
+            product = Product.objects.get(id=product_id)
+            
+            # Create order item
+            order_item = OrderItem.objects.create(
                 order=order,
                 product=product,
-                quantity=item['quantity'],
-                price_at_purchase=item['price_at_purchase']
+                quantity=quantity,
+                price_at_purchase=price_at_purchase
             )
-            # Reduce stock
-            product.quantity_in_stock -= item['quantity']
+            
+            # Reduce product stock
+            product.quantity_in_stock -= quantity
             product.save()
-            print(f"Created order item for product {product.id}, reduced stock to {product.quantity_in_stock}")
+            
+            print(f"Added item: {product.title} x{quantity} to order {order.id}")
+            print(f"Updated stock for product {product.id} to {product.quantity_in_stock}")
         
-        # Create delivery record
-
-        # Clear the cart if this was a cart-based order
-        if 'order_items' not in request.data:
-            cart_items.delete()
-        send_invoice_email(order)
-        # Return detailed order information
+        
+        # Try to send invoice email
+        try:
+            pdf = generate_invoice_pdf(order)
+            order.invoice_pdf.save(f'invoice_order_{order.id}.pdf', ContentFile(pdf.read()))
+            # Save PDF to media folder
+            media_path = os.path.join('media', 'invoices')
+            os.makedirs(media_path, exist_ok=True)
+            
+            file_path = os.path.join(media_path, f'invoice_order_{order.id}.pdf')
+            with open(file_path, 'wb') as f:
+                f.write(pdf.read())
+            send_invoice_email(pdf,order)
+            print(f"Invoice email sent for order {order.id}")
+        except Exception as email_error:
+            print(f"Failed to send invoice email: {str(email_error)}")
+        
+        # Return order details
         return Response({
             'order': {
                 'id': order.id,
-                'total_price': order.total_price,
+                'total_price': float(order.total_price),
                 'status': order.status,
                 'created_at': order.created_at,
             },
@@ -384,19 +494,34 @@ def create_order(request):
         }, status=status.HTTP_201_CREATED)
         
     except Exception as e:
-        print(f"Order creation error: {str(e)}")  # Add logging
+        print(f"Order creation error: {str(e)}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def order_history(request):
     try:
-        orders = Order.objects.filter(user=request.user).prefetch_related(
-            'items__product',
-            'delivery'
+        # Get user ID from request data
+        user_id = request.data.get('user') or request.query_params.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'User ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {user_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        orders = Order.objects.filter(user=user).prefetch_related(
+            'items__product'
         ).order_by('-created_at')
         
         serializer = OrderSerializer(orders, many=True)
@@ -404,69 +529,72 @@ def order_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+from django.contrib.auth import authenticate, login
+from django.middleware.csrf import get_token
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import UserSerializer
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
 def login_api(request):
-    try:
-        email = request.data.get('email')
-        password = request.data.get('password')
-        
-        if not email or not password:
-            return Response(
-                {'error': 'Please provide both email and password'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Try to get user by email
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response(
-                {'error': 'Invalid credentials'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        # Check password
-        if not user.check_password(password):
-            return Response(
-                {'error': 'Invalid credentials'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        # Login the user
-        from django.contrib.auth import login
-        login(request, user)
-        
-        # Get CSRF token
-        from django.middleware.csrf import get_token
-        csrf_token = get_token(request)
-        
-        # Get user data using UserSerializer
-        user_serializer = UserSerializer(user)
-        
-        # Return user data and CSRF token
-        response = Response({
-            'message': 'Login successful',
-            'user': user_serializer.data
-        })
-        
-        # Set CSRF cookie
-        response.set_cookie(
-            'csrftoken',
-            csrf_token,
-            httponly=False,
-            samesite='Lax',
-            secure=False
-        )
-        return response
-        
-    except Exception as e:
+    # 1. grab credentials
+    email = request.data.get('email')
+    password = request.data.get('password')
+    if not email or not password:
         return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            {'error': 'Please provide both email and password'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    try:
+        user_obj = User.objects.get(email=email)
+    except User.DoesNotExist:
+        user = None
+    else:
+        user = authenticate(request, username=user_obj.username, password=password)
+    # 2. authenticate
+    if user is None:
+        return Response(
+            {'error': 'Invalid credentials xd'},
+            status=status.HTTP_401_UNAUTHORIZED
         )
 
+    # 3. log them in (creates a session)
+    login(request, user)
+
+    # 4. issue a fresh CSRF token
+    csrf_token = get_token(request)
+
+    # 5. build your DRF Response
+    resp = Response({
+        'message': 'Login successful',
+        'user': UserSerializer(user).data
+    }, status=status.HTTP_200_OK)
+
+    # 6. send the CSRF token so your JS can read it
+    resp.set_cookie(
+        'csrftoken',
+        csrf_token,
+        httponly=False,   # allow JS → X-CSRFToken header
+        samesite='Lax',
+        secure=False      # switch to True under HTTPS
+    )
+
+    # 7. explicitly send the sessionid cookie
+    resp.set_cookie(
+        'sessionid',
+        request.session.session_key,
+        httponly=True,    # keep this secure
+        samesite='Lax',
+        secure=False
+    )
+
+    return resp
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -590,13 +718,27 @@ def register_api(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def user_profile(request):
     """
     GET: Get the user's profile
     PUT: Update the user's profile
     """
-    user = request.user
+    # Get user ID from request data
+    user_id = request.data.get('user') or request.query_params.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
     
     if request.method == 'GET':
         serializer = UserSerializer(user)
@@ -610,18 +752,34 @@ def user_profile(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def change_password(request):
     """
     Change the user's password
     Expects:
     {
+        "user": user_id,
         "old_password": "string",
         "new_password": "string",
         "confirm_password": "string"
     }
     """
-    user = request.user
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
     old_password = request.data.get('old_password')
     new_password = request.data.get('new_password')
     confirm_password = request.data.get('confirm_password')
@@ -652,13 +810,32 @@ def change_password(request):
     })
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def logout_api(request):
     """
     Logout the current user
+    Expects:
+    {
+        "user": user_id
+    }
     """
-    from django.contrib.auth import logout
-    logout(request)
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # We don't actually need to do anything here since we're no longer using sessions
     return Response({
         'message': 'Logged out successfully'
     })
@@ -667,17 +844,28 @@ def logout_api(request):
 @permission_classes([AllowAny])
 def check_auth(request):
     """
-    Check if the user is authenticated
+    Check if a user exists
     """
-    if request.user.is_authenticated:
-        serializer = UserSerializer(request.user)
+    # Get user ID from request data
+    user_id = request.data.get('user') or request.query_params.get('user')
+    if not user_id:
+        return Response({
+            'authenticated': False,
+            'error': 'User ID is required'
+        })
+            
+    try:
+        user = User.objects.get(id=user_id)
+        serializer = UserSerializer(user)
         return Response({
             'authenticated': True,
             'user': serializer.data
         })
-    return Response({
-        'authenticated': False
-    })
+    except User.DoesNotExist:
+        return Response({
+            'authenticated': False,
+            'error': f'User with ID {user_id} not found'
+        })
 
 
 # Media files serving view
@@ -698,3 +886,229 @@ def serve_media_file(request, filename):
     # Serve the file directly
     return FileResponse(open(file_path, 'rb'))
 
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def ratings_api(request):
+    """
+    GET: Fetch ratings with optional filtering by product_id and user_id
+    POST: Create a new rating
+    """
+    if request.method == 'GET':
+        # Get filter parameters
+        product_id = request.query_params.get('product')
+        user_id = request.query_params.get('user')
+        
+        # Apply filters if provided
+        ratings = Rating.objects.all()
+        if product_id:
+            ratings = ratings.filter(product_id=product_id)
+        if user_id:
+            ratings = ratings.filter(user_id=user_id)
+            
+        serializer = RatingSerializer(ratings, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # This is the existing create_rating functionality
+        try:
+            print(request.data)
+            product_id = request.data.get('product_id')
+            user_id = request.data.get('user_id')
+            rating_value = request.data.get('rating')
+            
+            if not product_id or not user_id or not rating_value:
+                return Response(
+                    {'error': 'Product ID, user ID, and rating are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Validate rating value
+            try:
+                rating_value = int(rating_value)
+                if rating_value < 1 or rating_value > 5:
+                    return Response(
+                        {'error': 'Rating must be between 1 and 5'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except (ValueError, TypeError):
+                return Response(
+                    {'error': 'Rating must be a number'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Get product
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': 'Product not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Get user
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            # Check if user has already rated this product
+            existing_rating = Rating.objects.filter(
+                user=user,
+                product=product
+            ).first()
+            
+            if existing_rating:
+                # Update existing rating
+                existing_rating.score = rating_value
+                existing_rating.save()
+                message = 'Rating updated successfully'
+            else:
+                # Create new rating
+                Rating.objects.create(
+                    user=user,
+                    product=product,
+                    score=rating_value
+                )
+                message = 'Rating created successfully'
+            
+            
+            return Response({
+                'message': message,
+                'product_id': product.id,
+                'user_id': user.id,
+                'rating': rating_value,
+                'avg_rating': product.avg_rating
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def comments_api(request):
+    """
+    GET: Fetch comments with optional filtering by product_id and user_id
+    POST: Create a new comment
+    """
+    if request.method == 'GET':
+        # Get filter parameters
+        product_id = request.query_params.get('product')
+        user_id = request.query_params.get('user')
+        
+        # Apply filters if provided
+        comments = Comment.objects.all()
+        if product_id:
+            comments = comments.filter(product_id=product_id)
+        if user_id:
+            comments = comments.filter(user_id=user_id)
+            
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # This is the existing create_comment functionality
+        try:
+            print(request.data)
+            product_id = request.data.get('product_id')
+            user_id = request.data.get('user_id')
+            comment_text = request.data.get('comment_text')
+            
+            if not product_id or not comment_text:
+                return Response(
+                    {'error': 'Product ID and comment text are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # If user_id is provided, get user name from user
+            if user_id:
+                try:
+                    user = User.objects.get(id=user_id)
+                    user_name = f"{user.first_name} {user.last_name}".strip()
+                    if not user_name:
+                        user_name = user.username
+                except User.DoesNotExist:
+                    return Response(
+                        {'error': 'User not found'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            elif not user_name:
+                return Response(
+                    {'error': 'Either user_id or user_name must be provided'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Get product
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': 'Product not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            # Check if user has already commented on this product
+            existing_comment = Comment.objects.filter(
+                user=user,
+                product=product
+            ).first()
+            
+            if existing_comment:
+                # Update existing comment
+                existing_comment.text = comment_text
+                existing_comment.save()
+                message = 'Comment updated successfully'
+                comment = existing_comment
+            else:
+                # Create comment
+                comment = Comment.objects.create(
+                    product=product,
+                    user=user,
+                    text=comment_text
+                )
+                message = 'Comment added successfully'
+            
+            # Return the created/updated comment
+            return Response({
+                'message': message,
+                'comment': {
+                    'id': comment.id,
+                    'product_id': product.id,
+                    'user_name': comment.user.username,
+                    'comment_text': comment.text,
+                    'created_at': comment.created_at
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_product_comments(request, product_id):
+    """
+    Get all approved comments for a specific product.
+    """
+    try:
+        # Get only approved comments for the specified product
+        comments = Comment.objects.filter(
+            product_id=product_id,
+            approved=True
+        ).order_by('-created_at')
+        
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response(
+            {'error': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

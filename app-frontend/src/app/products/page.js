@@ -23,6 +23,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
   const [filters, setFilters] = useState({ category: [], price: [0, Infinity] });
   const [sortBy, setSortBy] = useState("");
   const [priceRange, setPriceRange] = useState({ min: 0, max: 5000 });
+  const [searchQuery, setSearchQuery] = useState("");
   
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -83,6 +84,11 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
       setSortBy(sort);
     }
     
+    const search = searchParams.get("search");
+    if (search) {
+      setSearchQuery(search);
+    }
+    
     const minPrice = searchParams.get("minPrice");
     const maxPrice = searchParams.get("maxPrice");
     if (minPrice || maxPrice) {
@@ -105,6 +111,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
     
     console.log('Applying frontend filters:', filters);
     console.log('Sorting by:', sortBy);
+    console.log('Searching for:', searchQuery);
     
     // Apply all filters in one pass
     let filtered = allProducts.filter(product => {
@@ -123,7 +130,13 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
       
       const priceMatch = price >= filters.price[0] && price <= filters.price[1];
       
-      return categoryMatch && priceMatch;
+      // Search match
+      const searchMatch = !searchQuery || (
+        (product.title && product.title.toLowerCase().includes(searchQuery.toLowerCase())) || 
+        (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      );
+      
+      return categoryMatch && priceMatch && searchMatch;
     });
 
     // Apply sorting
@@ -158,18 +171,34 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
     
     setFilteredProducts(filtered);
     setCurrentPage(1); // Reset to first page when filters change
-  }, [filters, sortBy, allProducts]);
+  }, [filters, sortBy, searchQuery, allProducts]);
+
+  // Handle search input
+  const handleSearchChange = (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    // Update URL with debounced function call
+    debouncedUpdateURL(filters, sortBy, query);
+  };
 
   const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE);
 
-  // Update URL with filter parameters (debounced to avoid too many history entries)
-  const updateURL = debounce((updatedFilters, updatedSort) => {
+  // Debounced function for URL updates
+  const debouncedUpdateURL = debounce((updatedFilters, updatedSort, updatedSearch) => {
+    updateURL(updatedFilters, updatedSort, updatedSearch);
+  }, 500);
+
+  // Update URL with filter parameters
+  const updateURL = (updatedFilters, updatedSort, updatedSearch = searchQuery) => {
     if (!searchParams) return;
     const params = new URLSearchParams(searchParams.toString());
 
     // Update category in URL
     if (updatedFilters.category.length > 0) {
       params.set("category", updatedFilters.category[0]);
+    } else {
+      params.delete("category");
     }
     
     // Update price range in URL
@@ -192,8 +221,16 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
       params.delete("sort");
     }
 
-    router.push(`/products?${params.toString()}`);
-  }, 500);
+    // Update search in URL
+    if (updatedSearch) {
+      params.set("search", updatedSearch);
+    } else {
+      params.delete("search");
+    }
+
+    router.push(`?${params.toString()}`);
+    onFilterChange(updatedFilters);
+  };
 
   // Handle filter changes
   const handleFilterChange = (type, value) => {
@@ -209,7 +246,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
       } else if (type === "price") {
         newFilters.price = value;
       }
-      updateURL(newFilters, sortBy);
+      updateURL(newFilters, sortBy, searchQuery);
       return newFilters;
     });
   };
@@ -217,7 +254,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
   // Handle sort changes
   const handleSortChange = (value) => {
     setSortBy(value);
-    updateURL(filters, value);
+    updateURL(filters, value, searchQuery);
   };
 
   // Handle pagination
@@ -233,27 +270,30 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
     currentPage * ITEMS_PER_PAGE
   );
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="text-red-600 text-xl">{error}</div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-gray-100">  
       {/* Filter sidebar */}
       <div className="w-full md:w-64 md:sticky md:top-16 md:h-screen overflow-y-auto p-4 bg-white shadow-md">
         <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">Filters</h2>
+        
+        {/* Search bar */}
+        <div className="mb-6">
+          <h3 className="text-md font-semibold text-gray-700 mb-2">Search Products</h3>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="w-full p-2 pl-8 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+          </div>
+        </div>
         
         {/* Sort options */}
         <div className="mb-6">
@@ -270,31 +310,6 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
             <option value="name-az">Name: A to Z</option>
             <option value="name-za">Name: Z to A</option>
           </select>
-        </div>
-        
-        {/* Price range filter */}
-        <div className="mb-6">
-          <h3 className="text-md font-semibold text-gray-700 mb-2">Price Range</h3>
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">${filters.price[0]}</span>
-            <span className="text-sm text-gray-600">${filters.price[1]}</span>
-          </div>
-          <input
-            type="range"
-            min={priceRange.min}
-            max={priceRange.max}
-            value={filters.price[0]}
-            onChange={(e) => handleFilterChange("price", [parseInt(e.target.value), filters.price[1]])}
-            className="w-full"
-          />
-          <input
-            type="range"
-            min={priceRange.min}
-            max={priceRange.max}
-            value={filters.price[1]}
-            onChange={(e) => handleFilterChange("price", [filters.price[0], parseInt(e.target.value)])}
-            className="w-full"
-          />
         </div>
         
         {/* Category filters */}
@@ -364,6 +379,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
                 title={product.title}
                 price={product.price}
                 image={product.image}
+                image_url={product.image_url}
                 stock={product.stock}
                 rating={product.rating}
                 totalRating={product.total_ratings}
@@ -382,6 +398,7 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
               onClick={() => {
                 setFilters({ category: [], price: [priceRange.min, priceRange.max] });
                 setSortBy("");
+                setSearchQuery("");
                 router.push("/products");
               }}
               className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
@@ -437,12 +454,11 @@ const FilterSidebar = ({ onFilterChange = () => {} }) => {
             >
               Next
             </button>
-                </nav>
-              </div>
-            )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
-}
+};
+
+export default FilterSidebar;

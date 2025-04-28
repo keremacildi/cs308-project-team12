@@ -37,6 +37,8 @@ export default function Header() {
       // Refresh the page after logout
       window.location.href = "/";
     } catch (error) {
+
+      window.location.href = "/";
       console.error("Logout failed:", error);
     }
   };
@@ -92,31 +94,8 @@ export default function Header() {
           )}
         </nav>
         
-        <form onSubmit={handleSearch} className="relative w-full md:w-auto mt-4 md:mt-0 order-3 md:order-2">
-          <div className="relative flex items-center">
-            <input 
-              type="text" 
-              placeholder="Search products..." 
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full md:w-64 bg-white/10 text-white placeholder-blue-100 px-4 py-2 rounded-full border border-blue-400 focus:outline-none focus:ring-2 focus:ring-white"
-            />
-            <button 
-              onClick={handleLogout}
-              className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors flex items-center"
-            >
-              <LogOut className="w-4 h-4 mr-1" />
-              Logout
-            </button>
-          ) : (
-            <Link href="/login" className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors">
-              Login
-            </Link>
-          )}
-        </nav>
-        
         {/* Mobile Navigation */}
-        <div className="flex md:hidden items-center space-x-4 order-2">
+        <div className="flex md:hidden items-center space-x-4 order-2 md:order-3">
           <Link href="/cart" className="text-white" aria-label="Cart">
             <ShoppingCart className="w-6 h-6" />
           </Link>

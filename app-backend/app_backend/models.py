@@ -27,7 +27,7 @@ class Product(models.Model):
     warranty_status = models.BooleanField(default=False)
     distributor_info = models.TextField(help_text="Information about the distributor")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, blank=True)
-    image = models.ImageField(upload_to='products/', null=True, blank=True)
+    image = models.ImageField(upload_to='', default='1_org_zoom.jpg.webp', blank=True)
     
 
     def __str__(self):

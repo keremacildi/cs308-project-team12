@@ -8,7 +8,39 @@ export default function LoginPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    /*
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setError("");
+        try {
+            const res = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+
+            if (res.ok) {
+                const userData = await res.json();
+
+                // 🔒 Kullanıcı bilgilerini localStorage'a kaydet
+                localStorage.setItem("user", JSON.stringify(userData));
+                localStorage.setItem("isLoggedIn", "true");
+
+                // ✔️ Sepet bilgisi zaten localStorage'ta durduğu için ayrıca taşımaya gerek yok
+
+                setSuccess(true);
+                setTimeout(() => (window.location.href = "/"), 2000);
+            } else {
+                const data = await res.json();
+                setError(data.message || "Login failed");
+            }
+        } catch (err) {
+            setError("Connection error. Please try again.");
+        }
+    };
+    */
+    const encryptPassword = (password) => btoa(password);
+    const decryptPassword = (encryptedPassword) => atob(encryptedPassword);
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -45,7 +77,7 @@ export default function LoginPage() {
                 setSuccess(true);
 
                 // Redirect based on user type
-                const redirectPath = data.user.is_staff ? "/admin/dashboard" : "/profile";
+                const redirectPath = data.user.is_staff ? "/" : "/";
                 setTimeout(() => (window.location.href = redirectPath), 2000);
             } catch (err) {
                 console.error('Login error:', err);
@@ -53,11 +85,12 @@ export default function LoginPage() {
             }
         } catch (err) {
             console.error('Login error:', err);
-            setError(err.message || "Connection error. Please try again.");
-        } finally {
-            setIsSubmitting(false);
+            setError("Connection error. Please try again.");
         }
     };
+    
+    
+    
 
     if (success) {
         return (
@@ -65,7 +98,9 @@ export default function LoginPage() {
                 <div className="w-full max-w-md backdrop-blur-lg bg-white/90 rounded-3xl shadow-2xl p-8 transition-all duration-500 animate-fadeIn">
                     <div className="text-center">
                         <div className="mb-6 inline-flex p-4 bg-green-100 rounded-full">
-                            <CheckCircle className="h-12 w-12 text-green-600" />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                            </svg>
                         </div>
                         <h2 className="text-3xl font-bold text-gray-800 mb-2">Welcome Back!</h2>
                         <p className="text-gray-600">You&apos;ve successfully logged in. Redirecting you now...</p>
@@ -84,9 +119,13 @@ export default function LoginPage() {
                 </div>
                 
                 {error && (
-                    <div className="mb-6 p-4 rounded-lg bg-red-50 text-red-600 animate-[shake_0.5s_ease] flex items-start">
-                        <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
-                        <p>{error}</p>
+                    <div className="mb-6 p-4 rounded-lg bg-red-50 text-red-600 animate-[shake_0.5s_ease]">
+                        <p className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            {error}
+                        </p>
                     </div>
                 )}
                 
@@ -95,7 +134,10 @@ export default function LoginPage() {
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Email Address</label>
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Mail className="h-5 w-5 text-gray-400" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
+                                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
+                                </svg>
                             </div>
                             <input
                                 id="email"
@@ -118,7 +160,9 @@ export default function LoginPage() {
                         </div>
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Lock className="h-5 w-5 text-gray-400" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                </svg>
                             </div>
                             <input
                                 id="password"
@@ -134,20 +178,9 @@ export default function LoginPage() {
                     
                     <button 
                         type="submit"
-                        disabled={isSubmitting}
-                        className={`w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-xl shadow-lg hover:shadow-blue-500/30 hover:translate-y-[-2px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
-                            isSubmitting ? 'opacity-75 cursor-not-allowed' : ''
-                        }`}
+                        className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-xl shadow-lg hover:shadow-blue-500/30 hover:translate-y-[-2px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2"
                     >
-                        {isSubmitting ? (
-                            <span className="flex items-center justify-center">
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Processing...
-                            </span>
-                        ) : 'Sign In'}
+                        Sign In
                     </button>
                 </form>
                 

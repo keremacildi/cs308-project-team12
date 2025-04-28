@@ -23,20 +23,12 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    confirm_password = serializers.CharField(write_only=True)
     
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'confirm_password', 'first_name', 'last_name']
-    
-    def validate(self, data):
-        if data.get('password') != data.get('confirm_password'):
-            raise serializers.ValidationError("Passwords do not match")
-        return data
+        fields = ['username', 'email', 'password', 'first_name', 'last_name']
     
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
-        
         user = User.objects.create_user(**validated_data)
         return user
 
@@ -60,9 +52,18 @@ class ProductSerializer(serializers.ModelSerializer):
     stock = serializers.IntegerField(source='quantity_in_stock', read_only=True)
     rating = serializers.FloatField(source='avg_rating', read_only=True)
     total_ratings = serializers.SerializerMethodField(read_only=True)
+    image_url = serializers.SerializerMethodField(read_only=True)
     
     def get_total_ratings(self, obj):
         return Rating.objects.filter(product=obj).count()
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
     
     category_id = serializers.PrimaryKeyRelatedField(
         queryset=Category.objects.all(),
@@ -83,7 +84,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'id', 'title', 'model', 'serial_number', 'description',
             'quantity_in_stock', 'stock', 'price', 'cost', 'warranty_status',
             'distributor_info', 'category', 'category_id',
-            'is_available', 'rating', 'total_ratings', 'image'
+            'is_available', 'rating', 'total_ratings', 'image', 'image_url'
         ]
     
     def create(self, validated_data):
@@ -116,16 +117,29 @@ class OrderSerializer(serializers.ModelSerializer):
 
 
 class RatingSerializer(serializers.ModelSerializer):
+    user_details = UserSerializer(source='user', read_only=True)
+    product_details = ProductSerializer(source='product', read_only=True)
+    
     class Meta:
         model = Rating
-        fields = ['id', 'product', 'score', 'created_at']
-        read_only_fields = ['created_at']
+        fields = ['id', 'product', 'user', 'score', 'created_at', 'user_details', 'product_details']
+        read_only_fields = ['created_at', 'user_details', 'product_details']
+        extra_kwargs = {
+            'user': {'write_only': True},
+            'product': {'write_only': True}
+        }
 
 
 class CommentSerializer(serializers.ModelSerializer):
+    user_details = UserSerializer(source='user', read_only=True)
+    product_details = ProductSerializer(source='product', read_only=True)
     approved = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Comment
-        fields = ['id', 'product', 'text', 'approved', 'created_at']
-        read_only_fields = ['approved', 'created_at']
+        fields = ['id', 'product', 'user', 'text', 'approved', 'created_at', 'user_details', 'product_details']
+        read_only_fields = ['approved', 'created_at', 'user_details', 'product_details']
+        extra_kwargs = {
+            'user': {'write_only': True},
+            'product': {'write_only': True}
+        }

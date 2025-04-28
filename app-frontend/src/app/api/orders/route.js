@@ -1,12 +1,18 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
 export async function POST(request) {
     try {
         const body = await request.json();
         console.log('Received request body:', body);
         
-        const { delivery_address, items, total } = body;
+        const { delivery_address, items, total, userId } = body;
+
+        if (!userId) {
+            return NextResponse.json(
+                { error: 'User ID is required' },
+                { status: 400 }
+            );
+        }
 
         if (!delivery_address) {
             return NextResponse.json(
@@ -31,31 +37,33 @@ export async function POST(request) {
 
         // Log the data being sent to backend
         const orderData = {
+            user: userId,
             delivery_address,
             order_items,
             total_price: total
         };
         console.log('Sending to backend:', orderData);
 
-        // Get cookies
-        const cookieStore = cookies();
-        const allCookies = cookieStore.getAll();
-        const cookieHeader = allCookies.map(c => `${c.name}=${c.value}`).join('; ');
-
-        // Make the request with cookies included
+        // Make the direct request to the backend API
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Cookie': cookieHeader
             },
-            credentials: 'include',
             body: JSON.stringify(orderData),
         });
 
+        // Handle API response
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || errorData.detail || 'Failed to create order');
+            let errorMessage = 'Failed to create order';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorData.detail || errorMessage;
+            } catch (parseError) {
+                console.error('Error parsing error response:', parseError);
+            }
+            
+            return NextResponse.json({ error: errorMessage }, { status: response.status });
         }
 
         const data = await response.json();

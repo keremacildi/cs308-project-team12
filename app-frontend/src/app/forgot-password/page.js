@@ -2,7 +2,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Mail, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
-import apiClient from '../../utils/apiClient';
 
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
@@ -15,18 +14,39 @@ export default function ForgotPasswordPage() {
         setStatus({ type: null, message: "" });
 
         try {
-            // Call the API to send password reset email
-            await apiClient.auth.forgotPassword(email);
+            // For demo purposes - replace with actual API call
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Success case
+            // Simulate API response - Replace with actual implementation
+            // const res = await fetch("/api/auth/forgot-password", {
+            //     method: "POST",
+            //     headers: { "Content-Type": "application/json" },
+            //     body: JSON.stringify({ email }),
+            // });
+
+            // Success case - remove this when implementing actual API
             setStatus({
                 type: "success",
                 message: "Password reset link has been sent to your email address."
             });
+            
+            // Uncomment this for real implementation
+            // if (res.ok) {
+            //     setStatus({
+            //         type: "success",
+            //         message: "Password reset link has been sent to your email address."
+            //     });
+            // } else {
+            //     const data = await res.json();
+            //     setStatus({
+            //         type: "error",
+            //         message: data.message || "Email not found in our records."
+            //     });
+            // }
         } catch (err) {
             setStatus({
                 type: "error",
-                message: err.message || "Connection error. Please try again later."
+                message: "Connection error. Please try again later."
             });
         } finally {
             setIsSubmitting(false);

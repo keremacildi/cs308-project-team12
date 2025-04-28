@@ -1,12 +1,13 @@
 'use client';
 import React, { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import AddToCartButton from "./ui/AddToCartButton";
-import { Heart, ShoppingCart, Check, AlertCircle, Star } from "lucide-react";
+import { Heart, ShoppingCart, Check, AlertCircle, Star, Shield, Tag } from "lucide-react";
 
-export default function ProductCard({ id, title, price, image, stock, rating, ratingCount, totalRating, smallImage }) {
+export default function ProductCard({ id, title, price, image, image_url, stock, rating, ratingCount, totalRating, smallImage, warranty }) {
   // Create a product object including all properties
-  const product = { id, title, price, image, stock, rating, ratingCount, totalRating };
+  const product = { id, title, price, image, image_url, stock, rating, ratingCount, totalRating, warranty };
 
   // State for the wishlist button text and action
   const [isInWishlist, setIsInWishlist] = useState(false);
@@ -18,6 +19,9 @@ export default function ProductCard({ id, title, price, image, stock, rating, ra
   const formattedRatingCount = ratingCount ? parseInt(ratingCount) : 0;
   // Format total rating or use default
   const formattedTotalRating = totalRating ? parseInt(totalRating) : 0;
+  
+  // Get warranty status or provide a default
+  const warrantyStatus = warranty || "No Warranty";
   
   // Generate stars based on rating
   const renderStars = () => {
@@ -89,36 +93,69 @@ export default function ProductCard({ id, title, price, image, stock, rating, ra
         </div>
       )}
 
+      {/* Product ID Tag */}
+      <div className="absolute top-3 left-3 bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full z-10 flex items-center">
+        <Tag className="w-3 h-3 mr-1" />
+        ID: {id}
+      </div>
+
       {/* Discount Tag - Example */}
       {Math.random() > 0.5 && (
-        <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">
+        <div className="absolute top-3 right-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full z-10">
           SALE
         </div>
       )}
 
       {/* Low Stock Indicator at the top */}
       {stock > 0 && stock < 5 && (
-        <div className="absolute top-3 right-3 bg-orange-100 border border-orange-200 text-orange-700 text-xs font-bold px-2 py-1 rounded-full z-10 animate-pulse">
+        <div className="absolute top-10 right-3 bg-orange-100 border border-orange-200 text-orange-700 text-xs font-bold px-2 py-1 rounded-full z-10 animate-pulse">
           Low Stock
         </div>
       )}
 
       {/* Product Image */}
-      <div className="block relative overflow-hidden pt-[75%]">
-        <Link href={`/products/${id}`} className="block absolute inset-0">
-          <img 
-            src={getImageUrl(image)} 
+      <Link href={`/products/${id}`} className="block relative overflow-hidden pt-[75%]">
+        {image_url || image ? (
+          <Image 
+            src={image_url || image || "/iphone.jpg"} 
             alt={title}
-            className="w-full h-full object-contain p-4 transition-transform duration-300 group-hover:scale-105" 
+            fill
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 25vw"
+            className="object-contain p-4 transition-transform duration-300 group-hover:scale-105"
+            unoptimized={image_url && image_url.includes('0.0.0.0')}
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = "/iphone.jpg"; // Fallback image
+            }}
           />
-        </Link>
-        </div>
+        ) : (
+          <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-gray-100">
+            <p className="text-gray-500">No image</p>
+          </div>
+        )}
+      </Link>
 
       {/* Product Info */}
       <div className="p-4 flex flex-col flex-grow">
         <Link href={`/products/${id}`} className="hover:text-primary transition">
           <h3 className="text-gray-800 font-medium text-lg mb-1 line-clamp-2">{title}</h3>
         </Link>
+        
+        {/* Warranty information */}
+        <div className="flex items-center mt-1 mb-1 text-xs">
+          <Shield className={`w-3.5 h-3.5 mr-1 ${
+            warrantyStatus === "No Warranty" 
+              ? "text-gray-400" 
+              : "text-green-600"
+          }`} />
+          <span className={`${
+            warrantyStatus === "No Warranty" 
+              ? "text-gray-500" 
+              : "text-green-600 font-medium"
+          }`}>
+            {warrantyStatus}
+          </span>
+        </div>
         
         {/* Rating stars and information */}
         {ratingValue > 0 && (
@@ -179,7 +216,7 @@ export default function ProductCard({ id, title, price, image, stock, rating, ra
             >
               <Heart className={`w-4 h-4 ${isInWishlist ? "fill-pink-600 text-pink-600" : ""}`} />
               <span className="text-sm font-medium">Wishlist</span>
-          </button>
+            </button>
           </div>
         </div>
       </div>

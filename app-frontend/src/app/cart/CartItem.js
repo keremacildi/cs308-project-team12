@@ -1,23 +1,17 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { getImageUrl } from "../../utils/imageUtils";
 
 export default function CartItem({ item, updateQuantity, removeItem }) {
-    // Get the current stock amount (consistent with other components)
-    const stockAmount = item.quantity_in_stock || item.stock || 0;
-    const isOutOfStock = stockAmount === 0;
-    const isQuantityExceedsStock = item.quantity > stockAmount;
-
     return (
-        <div className={`bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow duration-200 ${isOutOfStock ? 'border border-red-300' : isQuantityExceedsStock ? 'border border-yellow-300' : ''}`}>
+        <div className="bg-white rounded-lg shadow-sm p-6 hover:shadow-md transition-shadow duration-200">
             <div className="flex items-start space-x-4">
                 {/* Product Image */}
                 <div className="flex-shrink-0 w-20 h-20 sm:w-32 sm:h-32 bg-gray-200 rounded-md overflow-hidden">
                     <Link href={`/products/${item.id}`}>
                         <div className="relative w-full h-full">
                             <img
-                                src={getImageUrl(item.image)}
+                                src={item.image}
                                 alt={item.title}
                                 className="object-cover w-full h-full"
                             />
@@ -35,17 +29,9 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                     </p>
                     
                     {/* Stock Information */}
-                    {isOutOfStock ? (
-                        <p className="text-sm text-red-600 font-medium">Out of Stock</p>
-                    ) : isQuantityExceedsStock ? (
-                        <p className="text-sm text-yellow-600 font-medium">
-                            Only {stockAmount} available (adjust quantity)
-                        </p>
-                    ) : stockAmount <= 5 ? (
-                        <p className="text-sm text-yellow-600">Only {stockAmount} left</p>
-                    ) : (
-                        <p className="text-sm text-green-600">In Stock</p>
-                    )}
+                    <p className={`text-sm ${item.stock > 5 ? 'text-green-600' : (item.stock > 0 ? 'text-yellow-600' : 'text-red-600')}`}>
+                        {item.stock > 5 ? 'In Stock' : (item.stock > 0 ? `Only ${item.stock} left` : 'Out of Stock')}
+                    </p>
                     
                     {/* Quantity Controls */}
                     <div className="flex items-center mt-4">
@@ -56,7 +42,7 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                             <button
                                 type="button"
                                 onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                                disabled={item.quantity <= 1 || isOutOfStock}
+                                disabled={item.quantity <= 1}
                                 className="relative inline-flex items-center px-2 py-1 rounded-l-md border border-gray-300 bg-gray-50 text-gray-500 
                                           hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -69,18 +55,15 @@ export default function CartItem({ item, updateQuantity, removeItem }) {
                                 type="number"
                                 id={`quantity-${item.id}`}
                                 min="1"
-                                max={stockAmount}
+                                max={item.stock}
                                 value={item.quantity}
-                                onChange={(e) => updateQuantity(item.id, parseInt(e.target.value) || 1)}
-                                disabled={isOutOfStock}
-                                className={`block w-16 min-w-0 border-gray-300 border-y text-center focus:ring-blue-500 focus:border-blue-500 text-sm ${
-                                    isOutOfStock ? 'bg-gray-100 text-gray-500' : ''
-                                }`}
+                                onChange={(e) => updateQuantity(item.id, parseInt(e.target.value))}
+                                className="block w-16 min-w-0 border-gray-300 border-y text-center focus:ring-blue-500 focus:border-blue-500 text-sm"
                             />
                             <button
                                 type="button"
                                 onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                disabled={item.quantity >= stockAmount || isOutOfStock}
+                                disabled={item.quantity >= item.stock}
                                 className="relative inline-flex items-center px-2 py-1 rounded-r-md border border-gray-300 bg-gray-50 text-gray-500 
                                           hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                             >

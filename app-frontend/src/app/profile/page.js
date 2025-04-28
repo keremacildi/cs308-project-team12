@@ -1,9 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { User, Mail, MapPin, Lock, Check, X, PenLine, Shield, History, CreditCard, AlertTriangle, Loader } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import apiClient from "../../utils/apiClient";
+import { User, Mail, MapPin, Lock, Check, X, PenLine, Shield, History, CreditCard } from "lucide-react";
 
 // Simple Base64 encryption simulation (bcrypt should be used in real app)
 const encryptPassword = (password) => {
@@ -15,7 +12,6 @@ const decryptPassword = (encryptedPassword) => {
 };
 
 export default function ProfilePage() {
-    const router = useRouter();
     const [user, setUser] = useState({
         name: "",
         email: "",
@@ -25,70 +21,31 @@ export default function ProfilePage() {
     const [errors, setErrors] = useState({});
     const [isEditing, setIsEditing] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
-    const [authError, setAuthError] = useState("");
     const [oldPassword, setOldPassword] = useState("");
     const [oldPasswordError, setOldPasswordError] = useState("");
     const [activeTab, setActiveTab] = useState("profile");
-    const [redirectCounter, setRedirectCounter] = useState(0);
 
     useEffect(() => {
-        // Check authentication status through API
-        const checkAuth = async () => {
-            setIsLoading(true);
-            try {
-                // Make API call to check auth status
-                const authStatus = await apiClient.auth.checkAuth();
-                
-                // If authenticated, load user profile from API
-                try {
-                    const profileData = await apiClient.auth.getUserProfile();
-                    // Map profile data to our local user state
-                    setUser({
-                        name: profileData.name || profileData.username || "User",
-                        email: profileData.email || "",
-                        address: profileData.address || "",
-                        password: ""  // We don't want to display the password
-                    });
-                    setIsLoggedIn(true);
-                } catch (profileError) {
-                    console.error("Failed to load profile:", profileError);
-                    // Show auth required screen if profile fetch fails
-                    setIsLoggedIn(false);
-                    setAuthError("Unable to load your profile data");
-                }
-            } catch (error) {
-                console.error("Authentication check failed:", error);
-                setIsLoggedIn(false);
-                setAuthError("Your session has expired or you're not logged in");
-            } finally {
-                setIsLoading(false);
-            }
+        // Simulated login check
+        const loggedIn = localStorage.getItem("isLoggedIn") === "true";
+        setIsLoggedIn(loggedIn);
+
+        if (!loggedIn) return;
+
+        // Load user data from localStorage
+        const storedUser = JSON.parse(localStorage.getItem("user")) || {
+            name: "John Doe",
+            email: "john@example.com",
+            address: "123 Main St",
+            password: encryptPassword("password123"),
         };
 
-        checkAuth();
+        // Decrypt password for UI display
+        setUser({
+            ...storedUser,
+            password: storedUser.password ? decryptPassword(storedUser.password) : "",
+        });
     }, []);
-
-    // Auto-redirect effect
-    useEffect(() => {
-        if (!isLoggedIn && !isLoading) {
-            // Start countdown from 3
-            setRedirectCounter(3);
-            
-            const countdownInterval = setInterval(() => {
-                setRedirectCounter(prev => {
-                    if (prev <= 1) {
-                        clearInterval(countdownInterval);
-                        router.push('/login');
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-
-            return () => clearInterval(countdownInterval);
-        }
-    }, [isLoggedIn, isLoading, router]);
 
     const validateForm = () => {
         const newErrors = {};
@@ -124,10 +81,9 @@ export default function ProfilePage() {
         }
     };
 
-    const handleUpdate = async () => {
+    const handleUpdate = () => {
         if (!validateForm()) return;
 
-        // For password change, verify old password
         if (isEditing && user.password) {
             const storedUser = JSON.parse(localStorage.getItem("user"));
             const storedPassword = storedUser?.password
@@ -140,25 +96,16 @@ export default function ProfilePage() {
             }
         }
 
-        // In a real app, this would call the API to update the profile
-        try {
-            // Mock API call
-            // await apiClient.auth.updateProfile(user);
-            
-            // For now, update localStorage
-            const updatedUser = {
-                ...user,
-                password: user.password ? encryptPassword(user.password) : "",
-            };
-            localStorage.setItem("user", JSON.stringify(updatedUser));
-            setIsEditing(false);
-            setOldPassword("");
-            setOldPasswordError("");
-            alert("Profile updated successfully!");
-        } catch (error) {
-            console.error("Failed to update profile:", error);
-            alert("Failed to update profile. Please try again.");
-        }
+        // Save with encrypted password
+        const updatedUser = {
+            ...user,
+            password: user.password ? encryptPassword(user.password) : "",
+        };
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+        setIsEditing(false);
+        setOldPassword("");
+        setOldPasswordError("");
+        alert("Profile updated successfully!");
     };
 
     const InputField = ({ icon: Icon, type, name, value, onChange, error, disabled }) => (
@@ -185,45 +132,27 @@ export default function ProfilePage() {
         </div>
     );
 
-    if (isLoading) {
-        return (
-            <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center">
-                <div className="flex flex-col items-center">
-                    <Loader className="h-10 w-10 text-blue-600 animate-spin mb-4" />
-                    <p className="text-gray-600">Verifying your account...</p>
-                </div>
-            </div>
-        );
-    }
-
     if (!isLoggedIn) {
         return (
             <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8 flex items-center justify-center">
-                <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 animate-fadeIn">
+                <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
                     <div className="text-center">
-                        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-amber-100">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
+                        <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-100">
+                            <User className="h-8 w-8 text-blue-600" />
                         </div>
                         <h2 className="mt-4 text-2xl font-bold text-gray-900">Authentication Required</h2>
-                        <p className="mt-2 text-gray-600 mb-6">
-                            Please sign in to continue with your purchase
-                        </p>
+                        <p className="mt-2 text-gray-600">Please sign in to view your profile</p>
                     </div>
-                    <div className="space-y-4">
-                        <Link
-                            href="/login"
-                            className="w-full flex items-center justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                    <div className="mt-8">
+                        <button
+                            onClick={() => {
+                                localStorage.setItem("isLoggedIn", "true");
+                                setIsLoggedIn(true);
+                            }}
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                         >
-                            Sign In {redirectCounter > 0 && `(${redirectCounter})`}
-                        </Link>
-                        <Link
-                            href="/"
-                            className="w-full flex items-center justify-center py-3 px-4 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                        >
-                            Return to Home
-                        </Link>
+                            Sign In (Simulated)
+                        </button>
                     </div>
                 </div>
             </div>
@@ -324,10 +253,11 @@ export default function ProfilePage() {
                                             <button
                                                 onClick={() => {
                                                     setIsEditing(false);
+                                                    setErrors({});
                                                     setOldPassword("");
                                                     setOldPasswordError("");
                                                 }}
-                                                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                                             >
                                                 <X className="mr-2 h-4 w-4" />
                                                 Cancel
@@ -337,77 +267,77 @@ export default function ProfilePage() {
                                 </div>
                                 
                                 <div className="p-6">
-                                    <InputField
-                                        icon={User}
-                                        type="text"
-                                        name="name"
-                                        value={user.name}
-                                        onChange={handleChange}
-                                        error={errors.name}
-                                        disabled={!isEditing}
-                                    />
-                                    <InputField
-                                        icon={Mail}
-                                        type="email"
-                                        name="email"
-                                        value={user.email}
-                                        onChange={handleChange}
-                                        error={errors.email}
-                                        disabled={!isEditing}
-                                    />
-                                    <InputField
-                                        icon={MapPin}
-                                        type="text"
-                                        name="address"
-                                        value={user.address}
-                                        onChange={handleChange}
-                                        error={errors.address}
-                                        disabled={!isEditing}
-                                    />
-
                                     {isEditing && (
-                                        <>
-                                            <div className="mt-8 mb-4">
-                                                <h3 className="text-lg font-medium text-gray-900">Change Password</h3>
-                                                <p className="text-sm text-gray-500 mt-1">
-                                                    Leave blank if you don't want to change your password
-                                                </p>
-                                            </div>
-                                            
-                                            <div className="relative mb-6">
-                                                <label htmlFor="oldPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                                                    Current Password
-                                                </label>
-                                                <div className={`flex items-center rounded-md shadow-sm overflow-hidden border ${oldPasswordError ? 'border-red-500' : 'border-gray-300'}`}>
-                                                    <div className="pl-3 bg-gray-50 border-r border-gray-300 text-gray-500">
-                                                        <Lock size={20} />
-                                                    </div>
-                                                    <input
-                                                        id="oldPassword"
-                                                        type="password"
-                                                        value={oldPassword}
-                                                        onChange={(e) => {
-                                                            setOldPassword(e.target.value);
-                                                            if (oldPasswordError) setOldPasswordError("");
-                                                        }}
-                                                        placeholder="Enter your current password"
-                                                        className="block w-full py-3 px-4 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                                    />
-                                                </div>
-                                                {oldPasswordError && <p className="mt-1 text-sm text-red-600">{oldPasswordError}</p>}
-                                            </div>
-                                            
-                                            <InputField
-                                                icon={Lock}
-                                                type="password"
-                                                name="password"
-                                                value={user.password}
-                                                onChange={handleChange}
-                                                error={errors.password}
-                                                disabled={false}
-                                            />
-                                        </>
+                                        <div className="mb-8 p-4 bg-blue-50 rounded-md text-blue-800 text-sm">
+                                            <p>You are currently in edit mode. Make your changes and click Save when finished.</p>
+                                        </div>
                                     )}
+                                    
+                                    <form>
+                                        <InputField
+                                            icon={User}
+                                            type="text"
+                                            name="name"
+                                            value={user.name}
+                                            onChange={handleChange}
+                                            error={errors.name}
+                                            disabled={!isEditing}
+                                        />
+
+                                        <InputField
+                                            icon={Mail}
+                                            type="email"
+                                            name="email"
+                                            value={user.email}
+                                            onChange={handleChange}
+                                            error={errors.email}
+                                            disabled={!isEditing}
+                                        />
+
+                                        <InputField
+                                            icon={MapPin}
+                                            type="text"
+                                            name="address"
+                                            value={user.address}
+                                            onChange={handleChange}
+                                            error={errors.address}
+                                            disabled={!isEditing}
+                                        />
+
+                                        {isEditing && (
+                                            <>
+                                                <div className="relative mb-6">
+                                                    <label htmlFor="oldPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Current Password
+                                                    </label>
+                                                    <div className={`flex items-center rounded-md shadow-sm overflow-hidden border ${oldPasswordError ? 'border-red-500' : 'border-gray-300'}`}>
+                                                        <div className="pl-3 bg-gray-50 border-r border-gray-300 text-gray-500">
+                                                            <Lock size={20} />
+                                                        </div>
+                                                        <input
+                                                            id="oldPassword"
+                                                            type="password"
+                                                            value={oldPassword}
+                                                            onChange={(e) => setOldPassword(e.target.value)}
+                                                            placeholder="Enter your current password"
+                                                            className="block w-full py-3 px-4 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                                                        />
+                                                    </div>
+                                                    {oldPasswordError && <p className="mt-1 text-sm text-red-600">{oldPasswordError}</p>}
+                                                </div>
+                                            </>
+                                        )}
+
+                                        <InputField
+                                            icon={Lock}
+                                            type="password"
+                                            name="password"
+                                            value={user.password}
+                                            onChange={handleChange}
+                                            error={errors.password}
+                                            disabled={!isEditing}
+                                        />
+                                    </form>
                                 </div>
                             </div>
                         )}
@@ -418,7 +348,11 @@ export default function ProfilePage() {
                                     <h2 className="text-xl font-semibold text-gray-900">Order History</h2>
                                 </div>
                                 <div className="p-6">
-                                    <p className="text-gray-500 text-center py-12">Your order history will appear here.</p>
+                                    <div className="text-center py-12">
+                                        <History className="mx-auto h-12 w-12 text-gray-400" />
+                                        <h3 className="mt-2 text-lg font-medium text-gray-900">No Orders Yet</h3>
+                                        <p className="mt-1 text-sm text-gray-500">Your order history will appear here once you make a purchase.</p>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -429,7 +363,14 @@ export default function ProfilePage() {
                                     <h2 className="text-xl font-semibold text-gray-900">Payment Methods</h2>
                                 </div>
                                 <div className="p-6">
-                                    <p className="text-gray-500 text-center py-12">Your payment methods will appear here.</p>
+                                    <div className="text-center py-12">
+                                        <CreditCard className="mx-auto h-12 w-12 text-gray-400" />
+                                        <h3 className="mt-2 text-lg font-medium text-gray-900">No Payment Methods</h3>
+                                        <p className="mt-1 text-sm text-gray-500">Add a payment method for faster checkout.</p>
+                                        <button className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                            Add Payment Method
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -440,7 +381,23 @@ export default function ProfilePage() {
                                     <h2 className="text-xl font-semibold text-gray-900">Security Settings</h2>
                                 </div>
                                 <div className="p-6">
-                                    <p className="text-gray-500 text-center py-12">Your security settings will appear here.</p>
+                                    <div className="space-y-6">
+                                        <div>
+                                            <h3 className="text-lg font-medium text-gray-900">Password</h3>
+                                            <p className="mt-1 text-sm text-gray-500">Update your password or enable two-factor authentication.</p>
+                                            <button className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                                Change Password
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="pt-6 border-t border-gray-200">
+                                            <h3 className="text-lg font-medium text-gray-900">Two-factor Authentication</h3>
+                                            <p className="mt-1 text-sm text-gray-500">Add an extra layer of security to your account.</p>
+                                            <button className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                                Enable 2FA
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}

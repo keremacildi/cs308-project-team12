@@ -4,7 +4,6 @@ import '../styles/globals.css';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { SessionProvider } from 'next-auth/react';
-import { Toaster } from 'react-hot-toast';
 
 export default function RootLayout({ children }) {
   return (
@@ -20,16 +19,6 @@ export default function RootLayout({ children }) {
             {children}
           </main>
           <Footer />
-          <Toaster 
-            position="top-right"
-            toastOptions={{
-              duration: 3000,
-              style: {
-                background: '#333',
-                color: '#fff',
-              },
-            }}
-          />
         </SessionProvider>
       </body>
     </html>

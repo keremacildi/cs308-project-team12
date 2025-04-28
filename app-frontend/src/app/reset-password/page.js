@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
-import apiClient from '../../utils/apiClient';
 
 export default function ResetPasswordPage() {
     const [password, setPassword] = useState("");
@@ -29,8 +28,47 @@ export default function ResetPasswordPage() {
             return;
         }
 
-        // A real validation would happen here, but we'll assume the token is valid
-        // In a production app, you would validate the token with your API
+        // For demo purposes - in a real app, you would verify the token with your API
+        // This is just a placeholder simulation
+        const validateToken = async () => {
+            try {
+                // Simulate API call to validate token
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // For demo, we'll pretend the token is valid if it's at least 10 chars
+                if (token.length < 10) {
+                    setTokenValid(false);
+                    setStatus({
+                        type: "error",
+                        message: "Reset token has expired or is invalid. Please request a new password reset link."
+                    });
+                }
+                
+                // In a real implementation, you would call your API:
+                // const res = await fetch("/api/auth/validate-reset-token", {
+                //     method: "POST",
+                //     headers: { "Content-Type": "application/json" },
+                //     body: JSON.stringify({ token }),
+                // });
+                //
+                // if (!res.ok) {
+                //     setTokenValid(false);
+                //     const data = await res.json();
+                //     setStatus({
+                //         type: "error",
+                //         message: data.message || "Invalid or expired token."
+                //     });
+                // }
+            } catch (err) {
+                setTokenValid(false);
+                setStatus({
+                    type: "error",
+                    message: "Error validating reset token. Please try again."
+                });
+            }
+        };
+
+        validateToken();
     }, [token]);
 
     const handleSubmit = async (e) => {
@@ -58,19 +96,40 @@ export default function ResetPasswordPage() {
         setStatus({ type: null, message: "" });
 
         try {
-            // Call the API to reset password
-            await apiClient.auth.resetPassword(token, password);
+            // For demo purposes - replace with actual API call
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Handle successful password reset
+            // Simulate successful password reset
             setIsComplete(true);
             setStatus({
                 type: "success",
                 message: "Your password has been successfully reset."
             });
+            
+            // In a real implementation, you would call your API:
+            // const res = await fetch("/api/auth/reset-password", {
+            //     method: "POST",
+            //     headers: { "Content-Type": "application/json" },
+            //     body: JSON.stringify({ token, password }),
+            // });
+            //
+            // if (res.ok) {
+            //     setIsComplete(true);
+            //     setStatus({
+            //         type: "success",
+            //         message: "Your password has been successfully reset."
+            //     });
+            // } else {
+            //     const data = await res.json();
+            //     setStatus({
+            //         type: "error",
+            //         message: data.message || "Failed to reset password."
+            //     });
+            // }
         } catch (err) {
             setStatus({
                 type: "error",
-                message: err.message || "Connection error. Please try again later."
+                message: "Connection error. Please try again later."
             });
         } finally {
             setIsSubmitting(false);

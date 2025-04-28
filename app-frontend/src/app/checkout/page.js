@@ -2,8 +2,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getImageUrl } from "../../utils/imageUtils";
-import apiClient from "../../utils/apiClient";
 
 export default function CheckoutPage() {
     const router = useRouter();
@@ -30,14 +28,6 @@ export default function CheckoutPage() {
         setLoading(false);
     }, []);
 
-    const handleFormChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({
-            ...prev,
-            [name]: value
-        }));
-    };
-
     const handleCheckout = async (e) => {
         if (e) e.preventDefault();
         
@@ -58,8 +48,9 @@ export default function CheckoutPage() {
                 return;
             }
             
-            // Format order data according to API expectations
+            // Format order data with user ID
             const orderData = {
+                user: user.id,
                 delivery_address: address,
                 order_items: cart.map(item => ({
                     product: item.id,
@@ -71,154 +62,48 @@ export default function CheckoutPage() {
 
             console.log('Sending order data:', orderData);
             
-            // Get all cookies to send with the request
-            const cookies = document.cookie.split(';')
-                .reduce((acc, cookie) => {
-                    const [key, value] = cookie.trim().split('=');
-                    if (key) acc[key] = value;
-                    return acc;
-                }, {});
-            
-            console.log('Cookies available:', Object.keys(cookies));
-
-            // Get CSRF token from cookies
-            const csrfToken = cookies.csrftoken;
-            
-            // Get user session from cookies
-            const userSession = cookies.userSession;
-            const isAuthenticated = cookies.isAuthenticated;
-            
-            // Also get user data from localStorage
-            const userData = JSON.parse(localStorage.getItem("user") || "{}");
-            
-            // Log auth info for debugging
-            console.log('Authentication info:', {
-                hasCsrfToken: !!csrfToken,
-                hasUserSession: !!userSession,
-                isAuthenticated: isAuthenticated === 'true',
-                userIdFromStorage: userData?.id,
-                cookiesFound: Object.keys(cookies)
-            });
-
-            // First try - direct request to the backend
-            let response;
-            let data;
-            
+            // Direct request to the backend with user ID in the body
             try {
-                // Get session ID from cookies
-                const sessionId = cookies.sessionid;
-                
-                // Create headers with only standard content type - no custom headers that might trigger CORS issues
-                const headers = {
-                    "Content-Type": "application/json",
-                };
-                
-                // Add CSRF token if available - this is standard for Django
-                if (csrfToken) {
-                    headers["X-CSRFToken"] = csrfToken;
-                }
-
-                console.log('Attempting direct checkout with credentials');
-                
-                // Use fetch with credentials to include cookies
-                response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
                     method: "POST",
-                    headers: headers,
-                    credentials: 'include', // This is crucial for sending cookies
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
                     body: JSON.stringify(orderData),
                 });
                 
-                // For debugging
-                console.log('Direct API response status:', response.status);
+                console.log('API response status:', response.status);
                 
-                data = await response.json();
-                console.log('Direct API response data:', data);
-            } catch (directApiError) {
-                console.error('Direct API call failed, trying through Next.js API route:', directApiError);
+                const data = await response.json();
+                console.log('API response data:', data);
                 
-                // Second try - through our Next.js API route that handles auth
-                try {
-                    // Prepare a simple request with just the necessary data
-                    const nextApiResponse = await fetch('/api/orders/direct', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            userId: userData.id,
-                            orderData: orderData
-                        }),
+                if (response.ok) {
+                    setInvoice({
+                        orderNumber: data.order?.id || `ORD-${Date.now()}`,
+                        date: new Date().toISOString(),
+                        items: cart,
+                        total: calculateTotal(),
+                        delivery_address: address,
+                        payment_method: paymentMethod,
+                        shipping_method: shippingMethod
                     });
+                    setOrderComplete(true);
                     
-                    console.log('Next.js API response status:', nextApiResponse.status);
-                    response = nextApiResponse;
-                    data = await nextApiResponse.json();
-                } catch (apiRouteError) {
-                    console.error('API route also failed:', apiRouteError);
-                    
-                    // Third try - fall back to a simpler version with fewer headers
-                    try {
-                        console.log('Attempting simple checkout with minimal headers');
-                        const simpleResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
-                            credentials: 'include',
-                            body: JSON.stringify(orderData),
-                        });
-                        
-                        response = simpleResponse;
-                        data = await simpleResponse.json();
-                    } catch (simpleCheckoutError) {
-                        console.error('Simple checkout also failed, trying server-side checkout:', simpleCheckoutError);
-                        
-                        // Final attempt - server-side checkout that uses a different auth mechanism
-                        console.log('Attempting server-side checkout');
-                        const serverCheckoutResponse = await fetch('/api/checkout', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                userId: userData.id,
-                                email: userData.email || 'user@example.com', // Use email from user data if available
-                                address: address,
-                                items: cart,
-                                total: calculateTotal()
-                            })
-                        });
-                        
-                        console.log('Server-side checkout status:', serverCheckoutResponse.status);
-                        response = serverCheckoutResponse;
-                        data = await serverCheckoutResponse.json();
-                    }
+                    // Clear cart after successful order
+                    localStorage.removeItem("cart");
+                    setCart([]);
+                } else {
+                    // Show error message
+                    const errorDetail = typeof data === 'object' ? 
+                      (data.error || data.detail || JSON.stringify(data)) : 
+                      'Failed to create order. Please try again.';
+                      
+                    setErrorMessage(errorDetail);
+                    console.error('Order creation failed:', data);
                 }
-            }
-            
-            if (response.ok) {
-                setInvoice({
-                    orderNumber: data.order?.id || `ORD-${Date.now()}`,
-                    date: new Date().toISOString(),
-                    items: cart,
-                    total: calculateTotal(),
-                    delivery_address: address,
-                    payment_method: paymentMethod,
-                    shipping_method: shippingMethod
-                });
-                setOrderComplete(true);
-                
-                // Clear cart after successful order
-                localStorage.removeItem("cart");
-                setCart([]);
-            } else {
-                // Show detailed error message for debugging
-                const errorDetail = typeof data === 'object' ? 
-                  (data.error || data.detail || JSON.stringify(data)) : 
-                  'Failed to create order. Please try again.';
-                  
-                setErrorMessage(errorDetail);
-                console.error('Order creation failed:', data);
+            } catch (apiError) {
+                console.error('API call failed:', apiError);
+                setErrorMessage(`API error: ${apiError.message}`);
             }
         } catch (error) {
             console.error("Checkout error:", error);
@@ -334,27 +219,17 @@ export default function CheckoutPage() {
                                 <p className="text-sm text-gray-600">
                                     <span className="font-medium">Date:</span> {new Date(invoice.date).toLocaleDateString()}
                                 </p>
-                                <p className="text-sm text-gray-600 mt-2">
-                                    <span className="font-medium">Delivery Address:</span> {invoice.deliveryAddress}
-                                </p>
                             </div>
                             
                             <div className="space-y-3 my-6">
                                 {invoice.items.map((item) => (
                                     <div key={item.id} className="flex justify-between py-2 border-b border-gray-200">
                                         <div className="flex">
-                                            <div className="flex-shrink-0 w-12 h-12 bg-gray-100 rounded-md overflow-hidden mr-3">
-                                                <img 
-                                                    src={getImageUrl(item.image)} 
-                                                    alt={item.title}
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            </div>
                                             <div className="ml-2">
                                                 <p className="text-sm font-medium text-gray-900">{item.title} <span className="text-gray-600">× {item.quantity}</span></p>
                                             </div>
                                         </div>
-                                        <p className="text-sm font-medium text-gray-900">${(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
+                                        <p className="text-sm font-medium text-gray-900">${(item.price * item.quantity).toFixed(2)}</p>
                                     </div>
                                 ))}
                             </div>
@@ -362,15 +237,15 @@ export default function CheckoutPage() {
                             <div className="border-t border-gray-200 pt-4">
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Subtotal</span>
-                                    <span className="text-gray-900">${invoice.subtotal.toFixed(2)}</span>
+                                    <span className="text-gray-900">${calculateSubtotal().toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Shipping</span>
-                                    <span className="text-gray-900">${invoice.shipping.toFixed(2)}</span>
+                                    <span className="text-gray-900">${calculateShipping().toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-2">
                                     <span className="text-gray-600">Tax</span>
-                                    <span className="text-gray-900">${invoice.tax.toFixed(2)}</span>
+                                    <span className="text-gray-900">${calculateTax().toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between mt-4 pt-4 border-t border-gray-200">
                                     <span className="text-lg font-bold text-gray-900">Total</span>
@@ -381,39 +256,13 @@ export default function CheckoutPage() {
                         
                         <p className="text-center text-gray-600 mb-6">A copy of your receipt has been sent to your email.</p>
                         
-                        <div className="flex justify-center space-x-4">
+                        <div className="flex justify-center">
                             <Link 
                                 href="/" 
                                 className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
                             >
                                 Return to Home
                             </Link>
-                            <Link 
-                                href="/orders" 
-                                className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-                            >
-                                View My Orders
-                            </Link>
-                        </div>
-                        
-                        <div className="mt-4 flex justify-center">
-                            <button
-                                onClick={() => {
-                                    // Extract the numeric part of the order ID
-                                    let orderId = invoice.orderNumber;
-                                    console.log("Original order ID:", orderId, typeof orderId);
-                                    
-                                    // Don't convert the order ID, send it as is
-                                    // The backend has been updated to handle different formats
-                                    apiClient.orders.downloadInvoice(orderId);
-                                }}
-                                className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-md shadow-sm text-base font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                Download Invoice
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -549,7 +398,6 @@ export default function CheckoutPage() {
                                                 />
                                             </div>
                                         </div>
-                                        <p className="text-sm font-medium text-gray-900">${(parseFloat(item.price) * item.quantity).toFixed(2)}</p>
                                     </div>
                                 )}
                             </div>
