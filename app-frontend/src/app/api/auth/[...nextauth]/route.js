@@ -1,64 +1,26 @@
-import NextAuth from 'next-auth';
-import CredentialsProvider from 'next-auth/providers/credentials';
+/*
+ * This file is a placeholder to handle import references from other components.
+ * Authentication is now handled via user ID in request body instead of sessions.
+ */
 
-const handler = NextAuth({
-  providers: [
-    CredentialsProvider({
-      name: 'Credentials',
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
-      },
-      async authorize(credentials) {
-        try {
-          const res = await fetch('http://localhost:8000/api/auth/login/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              email: credentials.email,
-              password: credentials.password,
-            }),
-          });
+export const authOptions = {
+  providers: [],
+};
 
-          const data = await res.json();
+export async function GET() {
+  return new Response(
+    JSON.stringify({ 
+      message: "Authentication now uses user ID in request body instead of sessions" 
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  );
+}
 
-          if (res.ok && data) {
-            return {
-              id: data.id,
-              email: data.email,
-              name: data.username,
-            };
-          }
-          return null;
-        } catch (error) {
-          console.error('Auth error:', error);
-          return null;
-        }
-      }
-    })
-  ],
-  pages: {
-    signIn: '/auth/signin',
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (token) {
-        session.user.id = token.id;
-      }
-      return session;
-    }
-  },
-  session: {
-    strategy: 'jwt',
-  },
-});
-
-export { handler as GET, handler as POST }; 
+export async function POST() {
+  return new Response(
+    JSON.stringify({ 
+      message: "Authentication now uses user ID in request body instead of sessions" 
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } }
+  );
+} 

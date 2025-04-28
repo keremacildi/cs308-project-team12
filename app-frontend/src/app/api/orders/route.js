@@ -5,7 +5,14 @@ export async function POST(request) {
         const body = await request.json();
         console.log('Received request body:', body);
         
-        const { delivery_address, items, total } = body;
+        const { delivery_address, items, total, userId } = body;
+
+        if (!userId) {
+            return NextResponse.json(
+                { error: 'User ID is required' },
+                { status: 400 }
+            );
+        }
 
         if (!delivery_address) {
             return NextResponse.json(
@@ -29,32 +36,34 @@ export async function POST(request) {
         }));
 
         // Log the data being sent to backend
-        const backendData = {
+        const orderData = {
+            user: userId,
             delivery_address,
             order_items,
             total_price: total
         };
-        console.log('Sending to backend:', backendData);
+        console.log('Sending to backend:', orderData);
 
-        const response = await fetch('http://localhost:8000/api/orders/', {
+        // Make the direct request to the backend API
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/orders/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
             },
-            credentials: 'include',
-            body: JSON.stringify(backendData),
+            body: JSON.stringify(orderData),
         });
 
-        console.log('Backend response status:', response.status);
-        
+        // Handle API response
         if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Backend error response:', errorData);
-            return NextResponse.json(
-                { error: errorData.error || 'Failed to create order' },
-                { status: response.status }
-            );
+            let errorMessage = 'Failed to create order';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorData.detail || errorMessage;
+            } catch (parseError) {
+                console.error('Error parsing error response:', parseError);
+            }
+            
+            return NextResponse.json({ error: errorMessage }, { status: response.status });
         }
 
         const data = await response.json();
@@ -63,7 +72,7 @@ export async function POST(request) {
     } catch (error) {
         console.error('Error creating order:', error);
         return NextResponse.json(
-            { error: 'Internal server error' },
+            { error: error.message || 'Internal server error' },
             { status: 500 }
         );
     }

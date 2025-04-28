@@ -1,16 +1,46 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, ShoppingCart, Heart, User, Package } from "lucide-react";
+import { Search, ShoppingCart, Heart, User, Package, LogOut } from "lucide-react";
+import { api } from "../lib/api";
 
 export default function Header() {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState("");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    // Check if user is logged in
+    const userJson = localStorage.getItem("user");
+    const loggedInStatus = localStorage.getItem("isLoggedIn") === "true";
+    setIsLoggedIn(loggedInStatus);
+    
+    if (userJson) {
+      try {
+        setUser(JSON.parse(userJson));
+      } catch (e) {
+        console.error("Error parsing user data:", e);
+      }
+    }
+  }, []);
 
   const handleSearch = async (e) => {
     e.preventDefault();
     router.push(`/search?q=${encodeURIComponent(searchInput)}`);
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.auth.logout();
+      // Refresh the page after logout
+      window.location.href = "/";
+    } catch (error) {
+
+      window.location.href = "/";
+      console.error("Logout failed:", error);
+    }
   };
 
   return (
@@ -36,37 +66,33 @@ export default function Header() {
             <Heart className="w-4 h-4 mr-1" />
             Wishlist
           </Link>
-          <Link href="/profile" className="text-white hover:text-blue-100 transition font-medium flex items-center">
-            <User className="w-4 h-4 mr-1" />
-            Profile
-          </Link>
-          <Link href="/orders" className="text-white hover:text-blue-100 transition font-medium flex items-center">
-            <Package className="w-4 h-4 mr-1" />
-            Orders
-          </Link>
-          <Link href="/login" className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors">
-            Login
-          </Link>
-        </nav>
-        
-        <form onSubmit={handleSearch} className="relative w-full md:w-auto mt-4 md:mt-0 order-3 md:order-2">
-          <div className="relative flex items-center">
-            <input 
-              type="text" 
-              placeholder="Search products..." 
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full md:w-64 bg-white/10 text-white placeholder-blue-100 px-4 py-2 rounded-full border border-blue-400 focus:outline-none focus:ring-2 focus:ring-white"
-            />
+          {isLoggedIn && (
+            <>
+              <Link href="/profile" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                <User className="w-4 h-4 mr-1" />
+                Profile
+              </Link>
+              <Link href="/orders" className="text-white hover:text-blue-100 transition font-medium flex items-center">
+                <Package className="w-4 h-4 mr-1" />
+                Orders
+              </Link>
+            </>
+          )}
+          
+          {isLoggedIn ? (
             <button 
-              type="submit" 
-              className="absolute right-2 text-blue-100 hover:text-white transition"
-              aria-label="Search"
+              onClick={handleLogout} 
+              className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors flex items-center"
             >
-              <Search className="w-5 h-5" />
+              <LogOut className="w-4 h-4 mr-1" />
+              Logout
             </button>
-          </div>
-        </form>
+          ) : (
+            <Link href="/login" className="bg-white text-primary hover:bg-blue-50 px-4 py-1.5 rounded-full font-medium transition-colors">
+              Login
+            </Link>
+          )}
+        </nav>
         
         {/* Mobile Navigation */}
         <div className="flex md:hidden items-center space-x-4 order-2 md:order-3">
@@ -76,9 +102,20 @@ export default function Header() {
           <Link href="/wishlist" className="text-white" aria-label="Wishlist">
             <Heart className="w-6 h-6" />
           </Link>
-          <Link href="/profile" className="text-white" aria-label="Profile">
-            <User className="w-6 h-6" />
-          </Link>
+          {isLoggedIn ? (
+            <div className="flex items-center space-x-2">
+              <Link href="/profile" className="text-white" aria-label="Profile">
+                <User className="w-6 h-6" />
+              </Link>
+              <button onClick={handleLogout} className="text-white" aria-label="Logout">
+                <LogOut className="w-6 h-6" />
+              </button>
+            </div>
+          ) : (
+            <Link href="/login" className="text-white" aria-label="Login">
+              <User className="w-6 h-6" />
+            </Link>
+          )}
         </div>
       </div>
       
@@ -86,8 +123,12 @@ export default function Header() {
       <nav className="md:hidden flex overflow-x-auto py-2 px-4 bg-blue-600 space-x-4 whitespace-nowrap">
         <Link href="/" className="text-white text-sm">Home</Link>
         <Link href="/products" className="text-white text-sm">Products</Link>
-        <Link href="/orders" className="text-white text-sm">Orders</Link>
-        <Link href="/login" className="text-white text-sm">Login</Link>
+        {isLoggedIn && <Link href="/orders" className="text-white text-sm">Orders</Link>}
+        {isLoggedIn ? (
+          <button onClick={handleLogout} className="text-white text-sm">Logout</button>
+        ) : (
+          <Link href="/login" className="text-white text-sm">Login</Link>
+        )}
       </nav>
     </header>
   );

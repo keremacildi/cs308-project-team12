@@ -1,16 +1,11 @@
 from rest_framework import serializers
 from .models import (
-    Product, Distributor, Category, Brand, Seller,
-    ShoppingCartItem, Order, OrderItem,
-    Rating, Comment, ProductReview, Wishlist, CustomerProfile
-)
+    Product,  Category,  
+     Order, OrderItem,
+    Rating, Comment,   )
 from django.contrib.auth.models import User
+from decimal import Decimal
 
-
-class DistributorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Distributor
-        fields = ['id', 'name', 'contact_info']
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -19,118 +14,88 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = ['id', 'name']
 
 
-class BrandSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Brand
-        fields = ['id', 'name']
-
-
-class SellerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Seller
-        fields = ['id', 'name']
-
-
-class CustomerProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CustomerProfile
-        fields = ['home_address', 'role']
-
-
 class UserSerializer(serializers.ModelSerializer):
-    profile = CustomerProfileSerializer(read_only=True)
-    
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'profile', 'is_staff']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_staff']
         read_only_fields = ['id', 'is_staff']
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
-    profile = CustomerProfileSerializer(required=False)
     password = serializers.CharField(write_only=True)
-    confirm_password = serializers.CharField(write_only=True)
     
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'confirm_password', 'first_name', 'last_name', 'profile']
-    
-    def validate(self, data):
-        if data.get('password') != data.get('confirm_password'):
-            raise serializers.ValidationError("Passwords do not match")
-        return data
+        fields = ['username', 'email', 'password', 'first_name', 'last_name']
     
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
-        profile_data = validated_data.pop('profile', {})
-        
         user = User.objects.create_user(**validated_data)
-        
-        if profile_data:
-            # Update the profile that was automatically created by the signal
-            profile = user.profile
-            for key, value in profile_data.items():
-                setattr(profile, key, value)
-            profile.save()
-            
         return user
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
-    profile = CustomerProfileSerializer()
-    
     class Meta:
         model = User
-        fields = ['username', 'email', 'first_name', 'last_name', 'profile']
+        fields = ['username', 'email', 'first_name', 'last_name']
     
     def update(self, instance, validated_data):
-        profile_data = validated_data.pop('profile', {})
-        
         # Update user fields
         for key, value in validated_data.items():
             setattr(instance, key, value)
         instance.save()
-        
-        # Update profile fields
-        if profile_data:
-            profile = instance.profile
-            for key, value in profile_data.items():
-                setattr(profile, key, value)
-            profile.save()
-            
         return instance
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    distributor = DistributorSerializer(read_only=True)
     category = CategorySerializer(read_only=True)
-    brand = BrandSerializer(read_only=True)
-    seller = SellerSerializer(read_only=True)
     is_available = serializers.BooleanField(read_only=True)
     stock = serializers.IntegerField(source='quantity_in_stock', read_only=True)
     rating = serializers.FloatField(source='avg_rating', read_only=True)
+    total_ratings = serializers.SerializerMethodField(read_only=True)
+    image_url = serializers.SerializerMethodField(read_only=True)
+    
+    def get_total_ratings(self, obj):
+        return Rating.objects.filter(product=obj).count()
+    
+    def get_image_url(self, obj):
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(),
+        source='category',
+        write_only=True,
+        required=False
+    )
+    cost = serializers.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = Product
         fields = [
             'id', 'title', 'model', 'serial_number', 'description',
-            'quantity_in_stock', 'stock', 'price', 'warranty_status',
-            'distributor', 'category', 'brand', 'seller', 'popularity',
-            'is_available', 'rating', 'image'
+            'quantity_in_stock', 'stock', 'price', 'cost', 'warranty_status',
+            'distributor_info', 'category', 'category_id',
+            'is_available', 'rating', 'total_ratings', 'image', 'image_url'
         ]
+    
+    def create(self, validated_data):
+        # Calculate cost field if price is provided and cost is not
+        if 'price' in validated_data and ('cost' not in validated_data or validated_data['cost'] is None):
+            validated_data['cost'] = validated_data['price'] * Decimal('0.5')
+        
+        # Create the product
+        product = Product.objects.create(**validated_data)
+        return product
 
-
-class ShoppingCartItemSerializer(serializers.ModelSerializer):
-    product = ProductSerializer(read_only=True)
-    total_price = serializers.SerializerMethodField()
-
-    class Meta:
-        model = ShoppingCartItem
-        fields = ['id', 'product', 'quantity', 'total_price']
-        read_only_fields = ['id', 'product', 'total_price']
-
-    def get_total_price(self, obj):
-        return obj.product.price * obj.quantity
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -152,31 +117,29 @@ class OrderSerializer(serializers.ModelSerializer):
 
 
 class RatingSerializer(serializers.ModelSerializer):
+    user_details = UserSerializer(source='user', read_only=True)
+    product_details = ProductSerializer(source='product', read_only=True)
+    
     class Meta:
         model = Rating
-        fields = ['id', 'product', 'score', 'created_at']
-        read_only_fields = ['created_at']
+        fields = ['id', 'product', 'user', 'score', 'created_at', 'user_details', 'product_details']
+        read_only_fields = ['created_at', 'user_details', 'product_details']
+        extra_kwargs = {
+            'user': {'write_only': True},
+            'product': {'write_only': True}
+        }
 
 
 class CommentSerializer(serializers.ModelSerializer):
+    user_details = UserSerializer(source='user', read_only=True)
+    product_details = ProductSerializer(source='product', read_only=True)
     approved = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Comment
-        fields = ['id', 'product', 'text', 'approved', 'created_at']
-        read_only_fields = ['approved', 'created_at']
-
-
-class ProductReviewSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ProductReview
-        fields = ['id', 'user', 'product', 'rating', 'comment', 'is_approved', 'created_at']
-        read_only_fields = ['user', 'is_approved', 'created_at']
-
-
-class WishlistSerializer(serializers.ModelSerializer):
-    product = ProductSerializer(read_only=True)
-
-    class Meta:
-        model = Wishlist
-        fields = ['id', 'product']
+        fields = ['id', 'product', 'user', 'text', 'approved', 'created_at', 'user_details', 'product_details']
+        read_only_fields = ['approved', 'created_at', 'user_details', 'product_details']
+        extra_kwargs = {
+            'user': {'write_only': True},
+            'product': {'write_only': True}
+        }

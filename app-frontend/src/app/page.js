@@ -1,22 +1,23 @@
 "use client"
 import { useState, useEffect } from 'react';
-import { mockProducts } from './data/mock_data/products';
 import ProductCard from '../components/ProductCard';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, ShoppingBag, Smartphone, Home as HomeIcon, Shirt } from 'lucide-react';
-
+import { api } from '../lib/api';
 // Category icon mapping
 const categoryIcons = {
-  "Electronics": <Smartphone className="w-5 h-5" />,
-  "Home Appliances": <HomeIcon className="w-5 h-5" />,
-  "Clothing": <Shirt className="w-5 h-5" />,
   "default": <ShoppingBag className="w-5 h-5" />
 };
 
 export default function HomePage() {
-  // Extract and sort products by rating (popularity) in descending order
-  const productsArray = mockProducts.product;
-  const sortedProducts = [...productsArray].sort((a, b) => b.rating - a.rating);
+ 
+  // Categories state
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  
+  // Products state
+  const [featuredProducts, setFeaturedProducts] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   
   // Auto-slide state
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -24,6 +25,47 @@ export default function HomePage() {
   
   // Define how many products per slide (responsive)
   const [itemsPerSlide, setItemsPerSlide] = useState(3);
+  
+  // Fetch categories and products
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoadingCategories(true);
+        setLoadingProducts(true);
+        
+        // Fetch both categories and products in parallel
+        const [categoriesData, productsData] = await Promise.all([
+          api.categories.list(),
+          api.products.list()
+        ]);
+        
+        setCategories(categoriesData || []);
+        
+        // Add sample warranty data to products (since backend might not have it yet)
+        const productsWithWarranty = productsData ? productsData.map(product => {
+          // Randomly assign different warranties to showcase the feature
+          const warranties = ["1 Year Warranty", "2 Year Warranty", "No Warranty", "6 Month Warranty"];
+          return {
+            ...product,
+            warranty: warranties[Math.floor(Math.random() * warranties.length)]
+          };
+        }) : [];
+        
+        // Use the first 3 products for the featured section
+        setFeaturedProducts(productsWithWarranty.slice(0, 3));
+          
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setCategories([]);
+        setFeaturedProducts([]);
+      } finally {
+        setLoadingCategories(false);
+        setLoadingProducts(false);
+      }
+    };
+    
+    fetchData();
+  }, []);
   
   // Update items per slide based on window width
   useEffect(() => {
@@ -53,29 +95,17 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [autoSlide, currentSlide]);
   
-  // Create slides based on items per slide
-  const totalProducts = sortedProducts.length;
-  const slides = [];
-  
-  for (let i = 0; i < totalProducts; i += itemsPerSlide) {
-    let slideItems = sortedProducts.slice(i, i + itemsPerSlide);
-    if (slideItems.length < itemsPerSlide) {
-      slideItems = [...slideItems];
-      while (slideItems.length < itemsPerSlide) {
-        slideItems.push(null);
-      }
-    }
-    slides.push(slideItems);
-  }
-
   // Move to next slide (wrap-around)
   const nextSlide = () => {
-    setCurrentSlide((prev) => (prev + 1) % slides.length);
+    setCurrentSlide((prev) => (prev + 1) % Math.max(1, Math.ceil(featuredProducts.length / itemsPerSlide)));
   };
 
   // Move to previous slide (wrap-around)
   const prevSlide = () => {
-    setCurrentSlide((prev) => (prev - 1 + slides.length) % slides.length);
+    setCurrentSlide((prev) => 
+      (prev - 1 + Math.ceil(featuredProducts.length / itemsPerSlide)) % 
+      Math.max(1, Math.ceil(featuredProducts.length / itemsPerSlide))
+    );
   };
 
   // Pause auto-slide on user interaction
@@ -85,8 +115,8 @@ export default function HomePage() {
     setTimeout(() => setAutoSlide(true), 10000); // Resume auto-slide after 10 seconds
   };
 
-  // For the categories section: get unique categories
-  const categories = [...new Set(productsArray.map(product => product.category))].slice(0, 3);
+  // Calculate number of slides needed based on number of products and items per slide
+  const numSlides = Math.max(1, Math.ceil(featuredProducts.length / itemsPerSlide));
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -110,7 +140,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
+      
       {/* Categories Section */}
       <section className="mb-12">
         <div className="flex justify-between items-center mb-6">
@@ -119,100 +149,82 @@ export default function HomePage() {
             View All
           </Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map((category, index) => (
-            <Link
-              key={index}
-              href={`/products?category=${encodeURIComponent(category)}`}
-              className="group"
-            >
-              <div className="bg-white rounded-xl shadow-sm p-6 h-full flex flex-col justify-center items-center transition-transform hover:shadow-md hover:-translate-y-1 border border-gray-100">
-                <div className="bg-blue-50 rounded-full p-4 mb-4 text-primary">
-                  {categoryIcons[category] || categoryIcons.default}
+        
+        {loadingCategories ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[1, 2, 3].map((index) => (
+              <div key={index} className="bg-gray-100 animate-pulse rounded-xl h-32"></div>
+            ))}
+          </div>
+        ) : categories.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {categories.map((category, index) => (
+              <Link
+                key={index}
+                href={`/products?category=${encodeURIComponent(category.name || category)}`}
+                className="group"
+              >
+                <div className="bg-white rounded-xl shadow-sm p-6 h-full flex flex-col justify-center items-center transition-transform hover:shadow-md hover:-translate-y-1 border border-gray-100">
+                  <div className="bg-blue-50 rounded-full p-4 mb-4 text-primary">
+                    {categoryIcons[category.name || category] || categoryIcons.default}
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-800 group-hover:text-primary transition">
+                    {category.name || category}
+                  </h3>
                 </div>
-                <h3 className="text-lg font-medium text-gray-800 group-hover:text-primary transition">
-                  {category}
-                </h3>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-500">
+            No categories available at the moment.
+          </div>
+        )}
       </section>
 
-      {/* Featured Products Slider Section */}
+      {/* Featured Products Section */}
       <section className="mb-12">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-800">Featured Products</h2>
-          <div className="flex items-center space-x-2">
-            {slides.length > 1 && (
-              <div className="flex space-x-1">
-                {slides.map((_, index) => (
-                  <button 
-                    key={index}
-                    onClick={() => setCurrentSlide(index)}
-                    className={`w-2.5 h-2.5 rounded-full transition-all ${
-                      currentSlide === index 
-                        ? 'bg-primary w-5' 
-                        : 'bg-gray-300 hover:bg-gray-400'
-                    }`}
-                    aria-label={`Go to slide ${index + 1}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          <Link href="/products" className="text-primary hover:underline font-medium">
+            View All
+          </Link>
         </div>
         
-        <div className="relative">
-          {slides.length > 1 && (
-            <>
-              <button 
-                onClick={() => handleManualNavigation(prevSlide)} 
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-2 shadow-md hover:bg-gray-100 transition"
-                aria-label="Previous slide"
-              >
-                <ChevronLeft className="w-6 h-6 text-gray-700" />
-              </button>
-              
-              <button 
-                onClick={() => handleManualNavigation(nextSlide)} 
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white rounded-full p-2 shadow-md hover:bg-gray-100 transition"
-                aria-label="Next slide"
-              >
-                <ChevronRight className="w-6 h-6 text-gray-700" />
-              </button>
-            </>
-          )}
-          
-          <div className="overflow-hidden">
-            <div 
-              className="flex transition-transform duration-500 ease-in-out"
-              style={{ transform: `translateX(-${currentSlide * 100}%)` }}
-            >
-              {slides.map((slide, slideIndex) => (
-                <div 
-                  key={slideIndex} 
-                  className="flex-none w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-                >
-                  {slide.map((product, productIndex) => 
-                    product ? (
-                      <ProductCard
-                        key={`${slideIndex}-${productIndex}`}
-                        id={product.id}
-                        title={product.title}
-                        price={product.price}
-                        image={product.image}
-                        stock={product.stock}
-                      />
-                    ) : (
-                      <div key={`empty-${slideIndex}-${productIndex}`} className="hidden lg:block" />
-                    )
-                  )}
+        {loadingProducts ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((index) => (
+              <div key={index} className="bg-white animate-pulse rounded-xl h-80 shadow-sm">
+                <div className="bg-gray-200 h-48 rounded-t-xl"></div>
+                <div className="p-4">
+                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
-        </div>
+        ) : featuredProducts.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {featuredProducts.map((product) => (
+              <ProductCard
+                key={product.id}
+                id={product.id}
+                title={product.title}
+                price={product.price}
+                image={product.image}
+                image_url={product.image_url}
+                stock={product.stock || product.quantity_in_stock}
+                rating={product.rating}
+                totalRating={product.total_ratings}
+                warranty={product.warranty}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-500">
+            No featured products available at the moment.
+          </div>
+        )}
       </section>
       
       {/* Promotional Banner */}

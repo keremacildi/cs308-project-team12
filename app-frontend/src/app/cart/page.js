@@ -42,7 +42,7 @@ export default function CartPage() {
 
     // Total price calculation
     const totalPrice = cart.reduce(
-        (sum, item) => sum + item.price * item.quantity,
+        (sum, item) => sum + (parseFloat(item.price) || 0) * item.quantity,
         0
     );
 
@@ -69,7 +69,7 @@ export default function CartPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
                             <p className="mt-4 text-xl text-gray-500">Your cart is empty</p>
-                            <p className="mt-2 text-gray-500">Looks like you haven't added any products to your cart yet.</p>
+                            <p className="mt-2 text-gray-500">Looks like you haven&apos;t added any products to your cart yet.</p>
                         </div>
                         <Link 
                             href="/products" 
@@ -135,7 +135,7 @@ export default function CartPage() {
                                                     <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
                                                 </div>
                                             </div>
-                                            <p className="text-sm font-medium text-gray-900">${(item.price * item.quantity).toFixed(2)}</p>
+                                            <p className="text-sm font-medium text-gray-900">${((parseFloat(item.price) || 0) * item.quantity).toFixed(2)}</p>
                                         </div>
                                     ))}
                                 </div>

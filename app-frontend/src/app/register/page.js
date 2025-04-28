@@ -1,12 +1,14 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { api } from '../../lib/api';
 
 export default function RegisterPage() {
     const [name, setName] = useState("");
+    const [surname, setSurname] = useState("");
+    const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(false);
 
@@ -14,42 +16,20 @@ export default function RegisterPage() {
         e.preventDefault();
         setError("");
 
-        if (password !== confirmPassword) {
-            setError("Passwords do not match");
-            return;
-        }
-
         try {
-            // First get CSRF token
-            const csrfResponse = await fetch("http://localhost:8000/api/auth/register/", {
-                method: "GET",
-                credentials: "include",
-            });
-            
-            const res = await fetch("http://localhost:8000/api/auth/register/", {
-                method: "POST",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-CSRFToken": document.cookie.split('; ')
-                        .find(row => row.startsWith('csrftoken='))
-                        ?.split('=')[1] || '',
-                },
-                credentials: "include",
-                body: JSON.stringify({ name, email, password }),
+            const data = await api.auth.register({ 
+                username,
+                first_name: name, 
+                last_name: surname,
+                email, 
+                password 
             });
 
-            const data = await res.json();
-
-            if (res.ok) {
-                setSuccess(true);
-                setTimeout(() => (window.location.href = "/login"), 3000);
-            } else {
-                setError(data.error || "Registration failed. Please try again.");
-            }
+            setSuccess(true);
+            setTimeout(() => (window.location.href = "/login"), 3000);
         } catch (err) {
             console.error('Registration error:', err);
-            setError("Connection error. Please try again.");
+            setError(err.message || "Registration failed. Please try again.");
         }
     };
 
@@ -92,7 +72,7 @@ export default function RegisterPage() {
                 
                 <form onSubmit={handleRegister} className="space-y-6">
                     <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Full Name</label>
+                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Name</label>
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
@@ -104,7 +84,47 @@ export default function RegisterPage() {
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
-                                placeholder="John Doe"
+                                placeholder="John"
+                                required
+                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label htmlFor="surname" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Surname</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <input
+                                id="surname"
+                                type="text"
+                                value={surname}
+                                onChange={(e) => setSurname(e.target.value)}
+                                placeholder="Doe"
+                                required
+                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Username</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <input
+                                id="username"
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                placeholder="johndoe"
                                 required
                                 className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"
                             />
@@ -145,26 +165,6 @@ export default function RegisterPage() {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="••••••••"
-                                required
-                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Confirm Password</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                                </svg>
-                            </div>
-                            <input
-                                id="confirmPassword"
-                                type="password"
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
                                 placeholder="••••••••"
                                 required
                                 className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"

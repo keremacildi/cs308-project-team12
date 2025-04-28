@@ -3,7 +3,7 @@ from reportlab.pdfgen import canvas
 from django.core.mail import EmailMessage, send_mail
 from django.core.files.base import ContentFile
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse
+from django.http import HttpResponse, FileResponse
 from django.db.models import Q, Avg, Sum, Count
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -18,126 +18,280 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from .permissions import IsStaff
-
+from django.db import models
+import smtplib
+from django.views.decorators.csrf import csrf_exempt
 from .models import (
-    Product, ShoppingCartItem, Order, OrderItem, Rating,
-    Comment, PaymentConfirmation, Delivery, Wishlist, ProductReview,
-    Category, Brand, Seller, CustomerProfile
-)
+    Product,  Order, OrderItem, Rating,
+    Comment,    
+    Category,   )
 from django.contrib.auth.models import User
 from .serializers import (
-    OrderSerializer, ProductReviewSerializer, ShoppingCartItemSerializer,
-    ProductSerializer, RatingSerializer, CommentSerializer, WishlistSerializer,
-    CategorySerializer, BrandSerializer, SellerSerializer, UserCreateSerializer,
-    UserSerializer, UserUpdateSerializer
+    OrderSerializer,  
+    ProductSerializer,   
+    CategorySerializer,   UserCreateSerializer,
+    UserSerializer, UserUpdateSerializer,RatingSerializer,CommentSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
+import os
+from decimal import Decimal
+import smtplib
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- Home View ---
 def home(request):
     return HttpResponse("Welcome to the backend API. Everything is running!")
 
-# --- Helper for Cart Items ---
-def get_cart_items(request):
-    if request.user.is_authenticated:
-        return ShoppingCartItem.objects.filter(user=request.user)
-    else:
-        session_key = request.session.session_key
-        if not session_key:
-            request.session.save()
-            session_key = request.session.session_key
-        return ShoppingCartItem.objects.filter(session_key=session_key)
-
-# --- Product Listing ---
-
-# --- Product Details ---
-def product_detail(request, product_id):
-    product = get_object_or_404(Product, pk=product_id)
-    serializer = ProductSerializer(product)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_all_products(request):
+    """
+    Get all products.
+    """
+    products = Product.objects.all()
+    serializer = ProductSerializer(products, many=True, context={'request': request})
     return Response(serializer.data)
 
-# --- Cart Operations ---
-def add_to_cart(request, product_id):
-    product = get_object_or_404(Product, pk=product_id)
-    if not product.is_available:
-        return HttpResponse("Product is out of stock.", status=400)
-    if request.user.is_authenticated:
-        item, created = ShoppingCartItem.objects.get_or_create(user=request.user, product=product)
-    else:
-        session_key = request.session.session_key
-        if not session_key:
-            request.session.save()
-            session_key = request.session.session_key
-        item, created = ShoppingCartItem.objects.get_or_create(session_key=session_key, product=product)
-    item.quantity += 1
-    item.save()
-    return redirect('view_cart')
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_product_detail(request, id):
+    """
+    Get details for a specific product by ID.
+    """
+    try:
+        product = Product.objects.get(id=id)
+        serializer = ProductSerializer(product, context={'request': request})
+        return Response(serializer.data)
+    except Product.DoesNotExist:
+        return Response(
+            {'error': 'Product not found'}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
 
-def remove_from_cart(request, item_id):
-    item = get_object_or_404(ShoppingCartItem, id=item_id)
-    item.delete()
-    return redirect('view_cart')
 
-# --- Checkout Process ---
-
-# --- Order History ---
-@login_required
-def order_history(request):
-    orders = Order.objects.filter(user=request.user).order_by('-created_at')
-    return render(request, 'store/order_history.html', {'orders': orders})
-
-# --- Rating and Comment Submission ---
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_categories(request):
+    """
+    Get all product categories.
+    """
+    categories = Category.objects.all()
+    serializer = CategorySerializer(categories, many=True)
+    return Response(serializer.data)
 
 # --- PDF Generation and Email Sending ---
 def generate_invoice_pdf(order):
     buffer = BytesIO()
-    p = canvas.Canvas(buffer)
-    p.drawString(100, 800, f"Invoice for Order #{order.id}")
-    p.drawString(100, 780, f"Customer: {order.user.username}")
-    y = 750
+    p = canvas.Canvas(buffer, pagesize=(595, 842))  # A4 size
+    
+    # Add logo and header
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(50, 800, "CS308 Store")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, 780, "Invoice")
+    
+    # Add invoice information
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(400, 800, f"Invoice #{order.id}")
+    p.setFont("Helvetica", 10)
+    p.drawString(400, 780, f"Date: {order.created_at.strftime('%Y-%m-%d')}")
+    p.drawString(400, 765, f"Order Status: {order.get_status_display()}")
+    
+    # Add customer information
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, 730, "Bill To:")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, 715, f"{order.user.first_name} {order.user.last_name}")
+    p.drawString(50, 700, f"Username: {order.user.username}")
+    p.drawString(50, 685, f"Email: {order.user.email}")
+    
+    
+    # Add table headers
+    p.setFont("Helvetica-Bold", 10)
+    p.drawString(50, 630, "Item")
+    p.drawString(300, 630, "Quantity")
+    p.drawString(370, 630, "Unit Price")
+    p.drawString(450, 630, "Total")
+    
+    # Add horizontal line
+    p.line(50, 620, 550, 620)
+    
+    # Add table data
+    y = 600
+    total = 0
+    p.setFont("Helvetica", 10)
+    
     for item in order.items.all():
-        p.drawString(100, y, f"{item.product.title} x {item.quantity} - ${item.product.price}")
+        if y < 100:  # Start a new page if we run out of space
+            p.showPage()
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(50, 800, "Item")
+            p.drawString(300, 800, "Quantity")
+            p.drawString(370, 800, "Unit Price")
+            p.drawString(450, 800, "Total")
+            p.line(50, 790, 550, 790)
+            p.setFont("Helvetica", 10)
+            y = 770
+        
+        item_total = item.price_at_purchase * item.quantity
+        total += item_total
+        
+        p.drawString(50, y, item.product.title)
+        p.drawString(300, y, str(item.quantity))
+        p.drawString(370, y, f"${item.price_at_purchase:.2f}")
+        p.drawString(450, y, f"${item_total:.2f}")
+        
         y -= 20
-    p.drawString(100, y - 20, f"Total: ${order.total_price}")
+    
+    # Add totals
+    p.line(50, y - 10, 550, y - 10)
+    p.drawString(350, y - 30, "Subtotal:")
+    p.drawString(450, y - 30, f"${total:.2f}")
+    
+    # Calculate tax (8%)
+    tax = total * Decimal('0.08')
+    p.drawString(350, y - 50, "Tax (8%):")
+    p.drawString(450, y - 50, f"${tax:.2f}")
+    
+    # Shipping - simplified, using fixed amount
+    shipping = Decimal('5.99')
+    p.drawString(350, y - 70, "Shipping:")
+    p.drawString(450, y - 70, f"${shipping:.2f}")
+    
+    # Final total
+    p.line(350, y - 80, 550, y - 80)
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(350, y - 100, "Total:")
+    p.drawString(450, y - 100, f"${order.total_price:.2f}")
+    
+    # Add footer
+    p.setFont("Helvetica", 8)
+    p.drawString(50, 50, "Thank you for your purchase!")
+    p.drawString(50, 35, "If you have any questions, please contact customer support.")
+    
     p.showPage()
     p.save()
     buffer.seek(0)
     return buffer
+import smtplib
+from django.core.mail import EmailMessage
 
-def send_invoice_email(order):
-    pdf = generate_invoice_pdf(order)
+def send_invoice_email(pdf, order):
+    pdf.seek(0)
     email = EmailMessage(
-        f"Invoice for Order #{order.id}",
-        "Please find your invoice attached.",
-        to=[order.user.email]
+        subject=f"Invoice for Order #{order.id}",
+        body="Please find your invoice attached.",
+        from_email="postmaster@sandbox0769910aa82f4c699d5b1ff8211a21a1.mailgun.org",
+        to=["batuhan.baykalhhh@gmail.com"],
     )
-    email.attach(f"invoice_order_{order.id}.pdf", pdf.read(), "application/pdf")
-    email.send()
+    email.attach(
+        f"invoice_order_{order.id}.pdf",
+        pdf.read(),
+        "application/pdf"
+    )
 
-# --- Merge Cart Items on Login ---
-@receiver(user_logged_in)
-def merge_cart(sender, request, user, **kwargs):
-    session_key = request.session.session_key
-    if not session_key:
-        return
-    session_items = ShoppingCartItem.objects.filter(session_key=session_key)
-    for item in session_items:
-        existing_item = ShoppingCartItem.objects.filter(user=user, product=item.product).first()
-        if existing_item:
-            existing_item.quantity += item.quantity
-            existing_item.save()
-            item.delete()
-        else:
-            item.user = user
-            item.session_key = None
-            item.save()
+    # This gives you an email.message.Message instance
+    std_msg = email.message()  
+
+    with smtplib.SMTP("smtp.mailgun.org", 2525) as server:
+        server.set_debuglevel(1)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(
+            "postmaster@sandbox0769910aa82f4c699d5b1ff8211a21a1.mailgun.org",
+            os.getenv("mailgun")
+        )
+        # Send the *standard* message, not the Django wrapper
+        server.send_message(std_msg)
+
+    print(f"Email sent successfully for order {order.id}")
+    return True
+
+
+
+    # Send email via ProtonMail SMTP
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def download_invoice(request, order_id):
+    try:
+        # Get user ID from request data
+        user_id = request.data.get('user') or request.query_params.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'User ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {user_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        # Try to convert string order_id to integer if needed
+        try:
+            if isinstance(order_id, str):
+                if order_id.startswith('ORD-'):
+                    order_id = order_id.replace('ORD-', '')
+                order_id = int(order_id)
+        except (ValueError, TypeError):
+            # If conversion fails, we'll proceed with the original order_id
+            # and let the 404 handler take care of it
+            pass
+            
+        # Get the order, ensuring it belongs to the requesting user
+        order = get_object_or_404(Order, id=order_id, user=user)
+        
+        # Check if invoice already exists
+        if order.invoice_pdf and order.invoice_pdf.name:
+            # Return existing invoice if it exists
+            response = HttpResponse(order.invoice_pdf.open(), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
+            return response
+        
+        # Generate new invoice
+        buffer = generate_invoice_pdf(order)
+        
+        # Save invoice to model for future use
+        order.invoice_pdf.save(f"invoice_order_{order.id}.pdf", ContentFile(buffer.read()))
+        buffer.seek(0)  # Reset buffer position after reading
+        
+        # Return the PDF as a response
+        response = HttpResponse(buffer, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="invoice_order_{order.id}.pdf"'
+        return response
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # --- Order Cancellation and Refund ---
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def cancel_order(request, order_id):
-    order = get_object_or_404(Order, pk=order_id, user=request.user)
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
+    order = get_object_or_404(Order, pk=order_id, user=user)
     if order.status != 'processing':
         return Response(
             {'error': 'Order cannot be cancelled.'},
@@ -148,9 +302,25 @@ def cancel_order(request, order_id):
     return Response({'message': 'Order cancelled successfully'})
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def refund_order(request, order_id):
-    order = get_object_or_404(Order, pk=order_id, user=request.user)
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
+    order = get_object_or_404(Order, pk=order_id, user=user)
     if order.status != 'delivered':
         return Response(
             {'error': 'Order cannot be refunded.'},
@@ -176,107 +346,147 @@ def refund_order(request, order_id):
     )
     return Response({'message': 'Order refunded successfully'})
 
-# --- Customer Profile ---
-
-# --- Wishlist Management ---
-
-# --- Manager Dashboard ---
-
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def create_order(request):
+    """
+    Create a new order with items.
+    Expected format:
+    {
+        "user": user_id,
+        "delivery_address": "address string",
+        "order_items": [
+            {
+                "product": product_id,
+                "quantity": quantity,
+                "price_at_purchase": price
+            },
+            ...
+        ],
+        "total_price": total_price
+    }
+    """
     try:
-        print("Received order creation request:", request.data)  # Log the incoming request
+        print("Received order creation request:", request.data)
         
-        # Get order items either from cart or request data
-        if 'order_items' in request.data:
-            # Direct order creation
-            order_items = request.data['order_items']
-            delivery_address = request.data.get('delivery_address', '')
-            total_price = request.data.get('total_price', 0)
+        # Get user from request data
+        user_id = request.data.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'User ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
             
-            print("Processing direct order with items:", order_items)  # Log order items
-            
-            # Validate order items
-            if not order_items or len(order_items) == 0:
-                return Response({'error': 'Order items are required'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Check stock availability
-            for item in order_items:
-                try:
-                    product = Product.objects.get(id=item['product'])
-                    if item['quantity'] > product.quantity_in_stock:
-                        return Response(
-                            {'error': f'Not enough stock for {product.title}'},
-                            status=status.HTTP_400_BAD_REQUEST
-                        )
-                except Product.DoesNotExist:
-                    return Response(
-                        {'error': f'Product with ID {item["product"]} not found'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-        else:
-            # Cart-based order creation
-            cart_items = ShoppingCartItem.objects.filter(user=request.user)
-            if not cart_items.exists():
-                return Response({'error': 'Cart is empty'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            order_items = []
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {user_id} not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get delivery address
+        delivery_address = request.data.get('delivery_address', '')
+        if not delivery_address:
+            return Response(
+                {'error': 'Delivery address is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get order items
+        order_items = request.data.get('order_items', [])
+        if not order_items or len(order_items) == 0:
+            return Response(
+                {'error': 'Order items are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get total price or calculate it
+        total_price = request.data.get('total_price', 0)
+        if not total_price:
+            # Calculate total if not provided
             total_price = 0
-            delivery_address = request.data.get('delivery_address', '')
+            for item in order_items:
+                price = float(item.get('price_at_purchase', 0))
+                quantity = int(item.get('quantity', 0))
+                total_price += price * quantity
+        
+        # Check stock availability for all items before creating the order
+        for item in order_items:
+            product_id = item.get('product')
+            quantity = int(item.get('quantity', 0))
             
-            for cart_item in cart_items:
-                if cart_item.quantity > cart_item.product.quantity_in_stock:
+            try:
+                product = Product.objects.get(id=product_id)
+                if quantity > product.quantity_in_stock:
                     return Response(
-                        {'error': f'Not enough stock for {cart_item.product.title}'},
+                        {'error': f'Not enough stock for {product.title}. Available: {product.quantity_in_stock}, Requested: {quantity}'},
                         status=status.HTTP_400_BAD_REQUEST
                     )
-                total_price += cart_item.product.price * cart_item.quantity
-                order_items.append({
-                    'product': cart_item.product.id,
-                    'quantity': cart_item.quantity,
-                    'price_at_purchase': cart_item.product.price
-                })
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': f'Product with ID {product_id} not found'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Create the order
         order = Order.objects.create(
-            user=request.user,
+            user=user,
             total_price=total_price,
             status='processing'
         )
         
-        print("Created order:", order.id)  # Log order creation
+        print(f"Created order: {order.id}")
         
         # Create order items and reduce stock
         for item in order_items:
-            product = Product.objects.get(id=item['product'])
-            OrderItem.objects.create(
+            product_id = item.get('product')
+            quantity = int(item.get('quantity', 0))
+            price_at_purchase = item.get('price_at_purchase')
+            
+            # Convert price string to Decimal if needed
+            if isinstance(price_at_purchase, str):
+                price_at_purchase = Decimal(price_at_purchase)
+            
+            product = Product.objects.get(id=product_id)
+            
+            # Create order item
+            order_item = OrderItem.objects.create(
                 order=order,
                 product=product,
-                quantity=item['quantity'],
-                price_at_purchase=item['price_at_purchase']
+                quantity=quantity,
+                price_at_purchase=price_at_purchase
             )
-            # Reduce stock
-            product.quantity_in_stock -= item['quantity']
+            
+            # Reduce product stock
+            product.quantity_in_stock -= quantity
             product.save()
-            print(f"Created order item for product {product.id}, reduced stock to {product.quantity_in_stock}")
+            
+            print(f"Added item: {product.title} x{quantity} to order {order.id}")
+            print(f"Updated stock for product {product.id} to {product.quantity_in_stock}")
         
-        # Create delivery record
-        Delivery.objects.create(
-            order=order,
-            delivery_address=delivery_address,
-            status='processing'
-        )
         
-        # Clear the cart if this was a cart-based order
-        if 'order_items' not in request.data:
-            cart_items.delete()
+        # Try to send invoice email
+        try:
+            pdf = generate_invoice_pdf(order)
+            order.invoice_pdf.save(f'invoice_order_{order.id}.pdf', ContentFile(pdf.read()))
+            # Save PDF to media folder
+            media_path = os.path.join('media', 'invoices')
+            os.makedirs(media_path, exist_ok=True)
+            
+            file_path = os.path.join(media_path, f'invoice_order_{order.id}.pdf')
+            with open(file_path, 'wb') as f:
+                f.write(pdf.read())
+            send_invoice_email(pdf,order)
+            print(f"Invoice email sent for order {order.id}")
+        except Exception as email_error:
+            print(f"Failed to send invoice email: {str(email_error)}")
         
-        # Return detailed order information
+        # Return order details
         return Response({
             'order': {
                 'id': order.id,
-                'total_price': order.total_price,
+                'total_price': float(order.total_price),
                 'status': order.status,
                 'created_at': order.created_at,
             },
@@ -284,19 +494,34 @@ def create_order(request):
         }, status=status.HTTP_201_CREATED)
         
     except Exception as e:
-        print(f"Order creation error: {str(e)}")  # Add logging
+        print(f"Order creation error: {str(e)}")
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def order_history(request):
     try:
-        orders = Order.objects.filter(user=request.user).prefetch_related(
-            'items__product',
-            'delivery'
+        # Get user ID from request data
+        user_id = request.data.get('user') or request.query_params.get('user')
+        if not user_id:
+            return Response(
+                {'error': 'User ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': f'User with ID {user_id} not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        orders = Order.objects.filter(user=user).prefetch_related(
+            'items__product'
         ).order_by('-created_at')
         
         serializer = OrderSerializer(orders, many=True)
@@ -304,403 +529,72 @@ def order_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def submit_review(request, product_id):
-    try:
-        product = Product.objects.get(id=product_id)
-        
-        # Check if the user has purchased and received the product
-        delivery = Delivery.objects.filter(
-            order__user=request.user,
-            order__items__product=product,
-            status='delivered'
-        ).first()
-        
-        if not delivery:
-            return Response(
-                {'error': 'You can only review products that have been delivered to you.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Check if user has already reviewed this product
-        existing_review = ProductReview.objects.filter(
-            user=request.user,
-            product=product
-        ).first()
-        
-        if existing_review:
-            return Response(
-                {'error': 'You have already reviewed this product.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Create the review
-        review = ProductReview.objects.create(
-            user=request.user,
-            product=product,
-            rating=request.data.get('rating'),
-            comment=request.data.get('comment', ''),
-            delivery=delivery,
-            is_approved=False  # Comments need approval, ratings don't
-        )
-        
-        return Response({
-            'message': 'Review submitted successfully',
-            'review_id': review.id
-        }, status=status.HTTP_201_CREATED)
-        
-    except Product.DoesNotExist:
-        return Response(
-            {'error': 'Product not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+from django.contrib.auth import authenticate, login
+from django.middleware.csrf import get_token
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import UserSerializer
 
-@api_view(['GET'])
-def get_product_reviews(request, product_id):
-    try:
-        reviews = ProductReview.objects.filter(
-            product_id=product_id,
-            is_approved=True
-        ).select_related('user', 'product')
-        
-        serializer = ProductReviewSerializer(reviews, many=True)
-        return Response({
-            'reviews': serializer.data,
-            'average_rating': reviews.aggregate(Avg('rating'))['rating__avg'] or 0
-        })
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-@permission_classes([IsStaff])
-def approve_review(request, review_id):
-    try:
-        review = ProductReview.objects.get(id=review_id)
-        review.is_approved = True
-        review.save()
-        
-        return Response({
-            'message': 'Review approved successfully'
-        })
-        
-    except ProductReview.DoesNotExist:
-        return Response(
-            {'error': 'Review not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-def cart_view(request):
-    try:
-        cart_items = get_cart_items(request)
-        serializer = ShoppingCartItemSerializer(cart_items, many=True)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['POST'])
-def add_to_cart(request, product_id):
-    try:
-        product = get_object_or_404(Product, id=product_id)
-        quantity = request.data.get('quantity', 1)
-        
-        if quantity > product.quantity_in_stock:
-            return Response(
-                {'error': 'Not enough stock available'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        cart_item, created = ShoppingCartItem.objects.get_or_create(
-            product=product,
-            user=request.user if request.user.is_authenticated else None,
-            session_key=request.session.session_key if not request.user.is_authenticated else None,
-            defaults={'quantity': quantity}
-        )
-        
-        if not created:
-            cart_item.quantity += quantity
-            cart_item.save()
-        
-        serializer = ShoppingCartItemSerializer(cart_item)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['DELETE'])
-def remove_from_cart(request, item_id):
-    try:
-        cart_item = get_object_or_404(ShoppingCartItem, id=item_id)
-        cart_item.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-@api_view(['PATCH'])
-def update_cart_item(request, item_id):
-    try:
-        cart_item = get_object_or_404(ShoppingCartItem, id=item_id)
-        quantity = request.data.get('quantity')
-        
-        if quantity is None:
-            return Response(
-                {'error': 'Quantity is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if quantity > cart_item.product.quantity_in_stock:
-            return Response(
-                {'error': 'Not enough stock available'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        cart_item.quantity = quantity
-        cart_item.save()
-        
-        serializer = ShoppingCartItemSerializer(cart_item)
-        return Response(serializer.data)
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-# --- API Views ---
-class ProductListAPIView(ListAPIView):
-    permission_classes = [AllowAny]
-    serializer_class = ProductSerializer
-    queryset = Product.objects.all()
-
-    def get_queryset(self):
-        queryset = Product.objects.all()
-        query = self.request.query_params.get('q', None)
-        sort_by = self.request.query_params.get('sort', None)
-        
-        if query:
-            queryset = queryset.filter(
-                Q(title__icontains=query) | Q(description__icontains=query)
-            )
-        
-        if sort_by == 'price':
-            queryset = queryset.order_by('price')
-        elif sort_by == 'popularity':
-            queryset = queryset.order_by('-popularity')
-            
-        return queryset
-
-class ProductDetailAPIView(RetrieveAPIView):
-    permission_classes = [AllowAny]
-    serializer_class = ProductSerializer
-    queryset = Product.objects.all()
-    lookup_field = 'id'
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_all_products(request):
-    """
-    Get all products with optional filtering and sorting.
-    """
-    products = Product.objects.all()
-    
-    # Apply category filter if provided
-    category = request.query_params.get('category', None)
-    if category:
-        products = products.filter(category__name=category)
-    
-    # Apply brand filter if provided
-    brand = request.query_params.get('brand', None)
-    if brand:
-        products = products.filter(brand__name=brand)
-    
-    # Apply seller filter if provided
-    seller = request.query_params.get('seller', None)
-    if seller:
-        products = products.filter(seller__name=seller)
-    
-    # Apply price range filter if provided
-    min_price = request.query_params.get('min_price', None)
-    if min_price:
-        products = products.filter(price__gte=float(min_price))
-    
-    max_price = request.query_params.get('max_price', None)
-    if max_price:
-        products = products.filter(price__lte=float(max_price))
-    
-    # Apply sorting
-    sort_by = request.query_params.get('sort', None)
-    if sort_by == 'price_asc':
-        products = products.order_by('price')
-    elif sort_by == 'price_desc':
-        products = products.order_by('-price')
-    elif sort_by == 'popularity':
-        products = products.order_by('-popularity')
-    elif sort_by == 'rating':
-        products = products.order_by('-avg_rating')
-    
-    # Serialize and return
-    serializer = ProductSerializer(products, many=True)
-    return Response(serializer.data)
-
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@authentication_classes([SessionAuthentication])
 def login_api(request):
-    try:
-        email = request.data.get('email')
-        password = request.data.get('password')
-        
-        if not email or not password:
-            return Response(
-                {'error': 'Please provide both email and password'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Try to get user by email
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response(
-                {'error': 'Invalid credentials'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        # Check password
-        if not user.check_password(password):
-            return Response(
-                {'error': 'Invalid credentials'},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
-        
-        # Login the user
-        from django.contrib.auth import login
-        login(request, user)
-        
-        # Get CSRF token
-        from django.middleware.csrf import get_token
-        csrf_token = get_token(request)
-        
-        # Get user data using UserSerializer
-        user_serializer = UserSerializer(user)
-        
-        # Return user data and CSRF token
-        response = Response({
-            'message': 'Login successful',
-            'user': user_serializer.data
-        })
-        
-        # Set CSRF cookie
-        response.set_cookie(
-            'csrftoken',
-            csrf_token,
-            httponly=False,
-            samesite='Lax',
-            secure=False
-        )
-        
-        return response
-        
-    except Exception as e:
+    # 1. grab credentials
+    email = request.data.get('email')
+    password = request.data.get('password')
+    if not email or not password:
         return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            {'error': 'Please provide both email and password'},
+            status=status.HTTP_400_BAD_REQUEST
         )
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def search_products(request):
     try:
-        # Get query parameters
-        query = request.query_params.get('q', '')
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        min_price = request.query_params.get('min_price')
-        max_price = request.query_params.get('max_price')
-        category = request.query_params.get('category')
-        brand = request.query_params.get('brand')
-        seller = request.query_params.get('seller')
-        sort_by = request.query_params.get('sort', 'relevance')
-
-        # Start with base queryset
-        products = Product.objects.all()
-
-        # Apply search query
-        if query:
-            products = products.filter(
-                Q(title__icontains=query) |
-                Q(description__icontains=query) |
-                Q(category__name__icontains=query)
-            )
-
-        # Apply price filters
-        if min_price:
-            products = products.filter(price__gte=float(min_price))
-        if max_price:
-            products = products.filter(price__lte=float(max_price))
-
-        # Apply category filter
-        if category:
-            products = products.filter(category__name=category)
-            
-        # Apply brand filter
-        if brand:
-            products = products.filter(brand__name=brand)
-            
-        # Apply seller filter
-        if seller:
-            products = products.filter(seller__name=seller)
-
-        # Apply sorting
-        if sort_by == 'price_low':
-            products = products.order_by('price')
-        elif sort_by == 'price_high':
-            products = products.order_by('-price')
-        elif sort_by == 'popularity':
-            products = products.order_by('-popularity')
-        elif sort_by == 'rating':
-            products = products.order_by('-avg_rating')
-
-        # Calculate pagination
-        total_products = products.count()
-        total_pages = (total_products + page_size - 1) // page_size
-        start = (page - 1) * page_size
-        end = start + page_size
-
-        # Get paginated results
-        paginated_products = products[start:end]
-
-        # Serialize results
-        serializer = ProductSerializer(paginated_products, many=True)
-
-        return Response({
-            'products': serializer.data,
-            'pagination': {
-                'total': total_products,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': total_pages
-            },
-            'filters': {
-                'query': query,
-                'min_price': min_price,
-                'max_price': max_price,
-                'category': category,
-                'brand': brand,
-                'seller': seller,
-                'sort_by': sort_by
-            }
-        })
-
-    except Exception as e:
+        user_obj = User.objects.get(email=email)
+    except User.DoesNotExist:
+        user = None
+    else:
+        user = authenticate(request, username=user_obj.username, password=password)
+    # 2. authenticate
+    if user is None:
         return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            {'error': 'Invalid credentials xd'},
+            status=status.HTTP_401_UNAUTHORIZED
         )
+
+    # 3. log them in (creates a session)
+    login(request, user)
+
+    # 4. issue a fresh CSRF token
+    csrf_token = get_token(request)
+
+    # 5. build your DRF Response
+    resp = Response({
+        'message': 'Login successful',
+        'user': UserSerializer(user).data
+    }, status=status.HTTP_200_OK)
+
+    # 6. send the CSRF token so your JS can read it
+    resp.set_cookie(
+        'csrftoken',
+        csrf_token,
+        httponly=False,   # allow JS → X-CSRFToken header
+        samesite='Lax',
+        secure=False      # switch to True under HTTPS
+    )
+
+    # 7. explicitly send the sessionid cookie
+    resp.set_cookie(
+        'sessionid',
+        request.session.session_key,
+        httponly=True,    # keep this secure
+        samesite='Lax',
+        secure=False
+    )
+
+    return resp
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -789,131 +683,7 @@ def reset_password(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-@api_view(['GET'])
-@permission_classes([IsStaff])
-def admin_dashboard(request):
-    try:
-        # Get recent orders
-        recent_orders = Order.objects.select_related('user').order_by('-created_at')[:10]
-        
-        # Get sales statistics
-        total_sales = Order.objects.filter(
-            status='delivered',
-            created_at__gte=timezone.now() - timedelta(days=30)
-        ).aggregate(total=Sum('total_price'))['total'] or 0
-        
-        # Get product statistics
-        product_stats = Product.objects.aggregate(
-            total_products=Count('id'),
-            low_stock=Count('id', filter=Q(quantity_in_stock__lt=10))
-        )
-        
-        # Get recent reviews
-        recent_reviews = ProductReview.objects.select_related(
-            'user', 'product'
-        ).order_by('-created_at')[:5]
-        
-        return Response({
-            'recent_orders': OrderSerializer(recent_orders, many=True).data,
-            'sales': {
-                'total_last_30_days': total_sales,
-                'total_orders': Order.objects.count(),
-                'pending_orders': Order.objects.filter(status='processing').count()
-            },
-            'products': {
-                'total': product_stats['total_products'],
-                'low_stock': product_stats['low_stock']
-            },
-            'recent_reviews': ProductReviewSerializer(recent_reviews, many=True).data
-        })
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
-@api_view(['GET'])
-@permission_classes([IsStaff])
-def admin_orders(request):
-    try:
-        status_filter = request.query_params.get('status')
-        date_from = request.query_params.get('date_from')
-        date_to = request.query_params.get('date_to')
-        
-        orders = Order.objects.select_related('user').all()
-        
-        if status_filter:
-            orders = orders.filter(status=status_filter)
-        if date_from:
-            orders = orders.filter(created_at__gte=date_from)
-        if date_to:
-            orders = orders.filter(created_at__lte=date_to)
-            
-        serializer = OrderSerializer(orders, many=True)
-        return Response(serializer.data)
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET', 'PUT', 'POST', 'DELETE'])
-@permission_classes([IsStaff])
-def admin_products(request, product_id=None):
-    try:
-        if request.method == 'GET':
-            if product_id:
-                product = get_object_or_404(Product, id=product_id)
-                serializer = ProductSerializer(product)
-            else:
-                products = Product.objects.all()
-                serializer = ProductSerializer(products, many=True)
-            return Response(serializer.data)
-            
-        elif request.method == 'PUT':
-            product = get_object_or_404(Product, id=product_id)
-            serializer = ProductSerializer(product, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        elif request.method == 'POST':
-            serializer = ProductSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        elif request.method == 'DELETE':
-            product = get_object_or_404(Product, id=product_id)
-            product.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-            
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def wishlist_view(request):
-    try:
-        wishlist_items = Wishlist.objects.filter(
-            user=request.user
-        ).select_related('product')
-        
-        serializer = WishlistSerializer(wishlist_items, many=True)
-        return Response(serializer.data)
-        
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -935,8 +705,10 @@ def register_api(request):
     }
     """
     serializer = UserCreateSerializer(data=request.data)
+    print(request.data)
     if serializer.is_valid():
         user = serializer.save()
+        print(serializer.data)
         # Create a UserSerializer instance to return the user data
         user_serializer = UserSerializer(user)
         return Response({
@@ -946,13 +718,27 @@ def register_api(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def user_profile(request):
     """
     GET: Get the user's profile
     PUT: Update the user's profile
     """
-    user = request.user
+    # Get user ID from request data
+    user_id = request.data.get('user') or request.query_params.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
     
     if request.method == 'GET':
         serializer = UserSerializer(user)
@@ -966,18 +752,34 @@ def user_profile(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def change_password(request):
     """
     Change the user's password
     Expects:
     {
+        "user": user_id,
         "old_password": "string",
         "new_password": "string",
         "confirm_password": "string"
     }
     """
-    user = request.user
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+        
     old_password = request.data.get('old_password')
     new_password = request.data.get('new_password')
     confirm_password = request.data.get('confirm_password')
@@ -1007,44 +809,33 @@ def change_password(request):
         'message': 'Password changed successfully'
     })
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_categories(request):
-    """
-    Get all product categories.
-    """
-    categories = Category.objects.all()
-    serializer = CategorySerializer(categories, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_brands(request):
-    """
-    Get all product brands.
-    """
-    brands = Brand.objects.all()
-    serializer = BrandSerializer(brands, many=True)
-    return Response(serializer.data)
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_sellers(request):
-    """
-    Get all product sellers.
-    """
-    sellers = Seller.objects.all()
-    serializer = SellerSerializer(sellers, many=True)
-    return Response(serializer.data)
-
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 def logout_api(request):
     """
     Logout the current user
+    Expects:
+    {
+        "user": user_id
+    }
     """
-    from django.contrib.auth import logout
-    logout(request)
+    # Get user ID from request data
+    user_id = request.data.get('user')
+    if not user_id:
+        return Response(
+            {'error': 'User ID is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response(
+            {'error': f'User with ID {user_id} not found'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # We don't actually need to do anything here since we're no longer using sessions
     return Response({
         'message': 'Logged out successfully'
     })
@@ -1053,133 +844,269 @@ def logout_api(request):
 @permission_classes([AllowAny])
 def check_auth(request):
     """
-    Check if the user is authenticated
+    Check if a user exists
     """
-    if request.user.is_authenticated:
-        serializer = UserSerializer(request.user)
+    # Get user ID from request data
+    user_id = request.data.get('user') or request.query_params.get('user')
+    if not user_id:
+        return Response({
+            'authenticated': False,
+            'error': 'User ID is required'
+        })
+            
+    try:
+        user = User.objects.get(id=user_id)
+        serializer = UserSerializer(user)
         return Response({
             'authenticated': True,
             'user': serializer.data
         })
-    return Response({
-        'authenticated': False
-    })
+    except User.DoesNotExist:
+        return Response({
+            'authenticated': False,
+            'error': f'User with ID {user_id} not found'
+        })
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def add_to_wishlist(request, product_id):
+
+# Media files serving view
+def serve_media_file(request, filename):
     """
-    Add a product to the user's wishlist
+    Custom view to serve media files directly
     """
-    try:
-        product = get_object_or_404(Product, id=product_id)
+    # Clean the filename to prevent directory traversal attacks
+    clean_filename = os.path.basename(filename)
+    
+    # Build the full path to the file in the media directory
+    file_path = os.path.join(settings.MEDIA_ROOT, 'products', clean_filename)
+    
+    # Check if the file exists
+    if not os.path.exists(file_path):
+        return HttpResponse("File not found", status=404)
+    
+    # Serve the file directly
+    return FileResponse(open(file_path, 'rb'))
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def ratings_api(request):
+    """
+    GET: Fetch ratings with optional filtering by product_id and user_id
+    POST: Create a new rating
+    """
+    if request.method == 'GET':
+        # Get filter parameters
+        product_id = request.query_params.get('product')
+        user_id = request.query_params.get('user')
         
-        # Check if product is already in wishlist
-        wishlist_item, created = Wishlist.objects.get_or_create(
-            user=request.user,
-            product=product
-        )
-        
-        if created:
+        # Apply filters if provided
+        ratings = Rating.objects.all()
+        if product_id:
+            ratings = ratings.filter(product_id=product_id)
+        if user_id:
+            ratings = ratings.filter(user_id=user_id)
+            
+        serializer = RatingSerializer(ratings, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # This is the existing create_rating functionality
+        try:
+            print(request.data)
+            product_id = request.data.get('product_id')
+            user_id = request.data.get('user_id')
+            rating_value = request.data.get('rating')
+            
+            if not product_id or not user_id or not rating_value:
+                return Response(
+                    {'error': 'Product ID, user ID, and rating are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Validate rating value
+            try:
+                rating_value = int(rating_value)
+                if rating_value < 1 or rating_value > 5:
+                    return Response(
+                        {'error': 'Rating must be between 1 and 5'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except (ValueError, TypeError):
+                return Response(
+                    {'error': 'Rating must be a number'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Get product
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': 'Product not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Get user
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {'error': 'User not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            # Check if user has already rated this product
+            existing_rating = Rating.objects.filter(
+                user=user,
+                product=product
+            ).first()
+            
+            if existing_rating:
+                # Update existing rating
+                existing_rating.score = rating_value
+                existing_rating.save()
+                message = 'Rating updated successfully'
+            else:
+                # Create new rating
+                Rating.objects.create(
+                    user=user,
+                    product=product,
+                    score=rating_value
+                )
+                message = 'Rating created successfully'
+            
+            
             return Response({
-                'message': 'Product added to wishlist'
-            }, status=status.HTTP_201_CREATED)
-        else:
-            return Response({
-                'message': 'Product already in wishlist'
+                'message': message,
+                'product_id': product.id,
+                'user_id': user.id,
+                'rating': rating_value,
+                'avg_rating': product.avg_rating
             })
             
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def remove_from_wishlist(request, product_id):
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def comments_api(request):
     """
-    Remove a product from the user's wishlist
+    GET: Fetch comments with optional filtering by product_id and user_id
+    POST: Create a new comment
     """
-    try:
-        wishlist_item = get_object_or_404(
-            Wishlist, 
-            user=request.user,
-            product_id=product_id
-        )
+    if request.method == 'GET':
+        # Get filter parameters
+        product_id = request.query_params.get('product')
+        user_id = request.query_params.get('user')
         
-        wishlist_item.delete()
-        return Response({
-            'message': 'Product removed from wishlist'
-        }, status=status.HTTP_200_OK)
+        # Apply filters if provided
+        comments = Comment.objects.all()
+        if product_id:
+            comments = comments.filter(product_id=product_id)
+        if user_id:
+            comments = comments.filter(user_id=user_id)
             
-    except Wishlist.DoesNotExist:
-        return Response({
-            'error': 'Product not in wishlist'
-        }, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # This is the existing create_comment functionality
+        try:
+            print(request.data)
+            product_id = request.data.get('product_id')
+            user_id = request.data.get('user_id')
+            comment_text = request.data.get('comment_text')
+            
+            if not product_id or not comment_text:
+                return Response(
+                    {'error': 'Product ID and comment text are required'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # If user_id is provided, get user name from user
+            if user_id:
+                try:
+                    user = User.objects.get(id=user_id)
+                    user_name = f"{user.first_name} {user.last_name}".strip()
+                    if not user_name:
+                        user_name = user.username
+                except User.DoesNotExist:
+                    return Response(
+                        {'error': 'User not found'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+            elif not user_name:
+                return Response(
+                    {'error': 'Either user_id or user_name must be provided'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+                
+            # Get product
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': 'Product not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+                
+            # Check if user has already commented on this product
+            existing_comment = Comment.objects.filter(
+                user=user,
+                product=product
+            ).first()
+            
+            if existing_comment:
+                # Update existing comment
+                existing_comment.text = comment_text
+                existing_comment.save()
+                message = 'Comment updated successfully'
+                comment = existing_comment
+            else:
+                # Create comment
+                comment = Comment.objects.create(
+                    product=product,
+                    user=user,
+                    text=comment_text
+                )
+                message = 'Comment added successfully'
+            
+            # Return the created/updated comment
+            return Response({
+                'message': message,
+                'comment': {
+                    'id': comment.id,
+                    'product_id': product.id,
+                    'user_name': comment.user.username,
+                    'comment_text': comment.text,
+                    'created_at': comment.created_at
+                }
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
-def get_products_by_category(request, category_id):
+def get_product_comments(request, product_id):
     """
-    Get all products from a specific category
+    Get all approved comments for a specific product.
     """
     try:
-        # Verify category exists
-        category = get_object_or_404(Category, id=category_id)
+        # Get only approved comments for the specified product
+        comments = Comment.objects.filter(
+            product_id=product_id,
+            approved=True
+        ).order_by('-created_at')
         
-        # Get products in this category
-        products = Product.objects.filter(category=category)
-        
-        # Apply additional filters if provided
-        min_price = request.query_params.get('min_price')
-        if min_price:
-            products = products.filter(price__gte=float(min_price))
-        
-        max_price = request.query_params.get('max_price')
-        if max_price:
-            products = products.filter(price__lte=float(max_price))
-        
-        # Apply sorting
-        sort_by = request.query_params.get('sort', None)
-        if sort_by == 'price_asc':
-            products = products.order_by('price')
-        elif sort_by == 'price_desc':
-            products = products.order_by('-price')
-        elif sort_by == 'popularity':
-            products = products.order_by('-popularity')
-        elif sort_by == 'rating':
-            products = products.order_by('-avg_rating')
-        
-        # Serialize and paginate
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 10))
-        
-        total_products = products.count()
-        total_pages = (total_products + page_size - 1) // page_size
-        
-        start_index = (page - 1) * page_size
-        end_index = min(start_index + page_size, total_products)
-        
-        paginated_products = products[start_index:end_index]
-        serializer = ProductSerializer(paginated_products, many=True)
-        
-        return Response({
-            'category': category.name,
-            'products': serializer.data,
-            'pagination': {
-                'total': total_products,
-                'page': page,
-                'page_size': page_size,
-                'total_pages': total_pages
-            }
-        })
-        
+        serializer = CommentSerializer(comments, many=True)
+        return Response(serializer.data)
     except Exception as e:
         return Response(
             {'error': str(e)}, 

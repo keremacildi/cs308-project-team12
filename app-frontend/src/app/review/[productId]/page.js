@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import ProductCard from "../../../components/ProductCard"; // Adjust the path as needed
-import { mockProducts } from "../../data/mock_data/products"; // Adjust the path as needed
 
 export default function ReviewPage() {
   const { productId } = useParams();
@@ -11,13 +10,7 @@ export default function ReviewPage() {
   const [rating, setRating] = useState(5);
   const [submitted, setSubmitted] = useState(false);
 
-  useEffect(() => {
-    // Find the product in the mock data by matching the id
-    const prod = mockProducts.product.find(
-      (p) => p.id === parseInt(productId, 10)
-    );
-    setProduct(prod);
-  }, [productId]);
+  
 
   const handleSubmit = (e) => {
     e.preventDefault();

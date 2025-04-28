@@ -27,7 +27,6 @@ var/
 *.sqlite3-journal
 
 # Django media/static
-media/
 staticfiles/
 staticfiles_build/
 
