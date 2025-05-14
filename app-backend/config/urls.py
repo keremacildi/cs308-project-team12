@@ -39,6 +39,10 @@ urlpatterns = [
     # Ratings & Comments - combined view functions that handle different HTTP methods
     path('api/ratings/', views.ratings_api, name='api_ratings'),
     path('api/comments/', views.comments_api, name='api_comments'),
+    path('api/comments/<int:comment_id>/', views.edit_delete_comment, name='api_edit_delete_comment'),
+
+    # Revenue/Profit report
+    path('api/revenue/', views.revenue_report, name='api_revenue_report'),
 ]
 
 # Serve media files in development

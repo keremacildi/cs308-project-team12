@@ -1112,3 +1112,69 @@ def get_product_comments(request, product_id):
             {'error': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def revenue_report(request):
+    """
+    Returns total revenue, total cost, and profit/loss for all delivered orders.
+    Accessible only by admin/staff users.
+    """
+    from decimal import Decimal
+    from django.db.models import Sum, F
+    
+    # Only consider delivered orders
+    delivered_orders = Order.objects.filter(status='delivered')
+    
+    # Calculate total revenue (sum of total_price for delivered orders)
+    total_revenue = delivered_orders.aggregate(total=Sum('total_price'))['total'] or Decimal('0.00')
+    
+    # Calculate total cost (sum of cost * quantity for all items in delivered orders)
+    total_cost = Decimal('0.00')
+    for order in delivered_orders:
+        for item in order.items.all():
+            # Use product cost at the time of calculation (no historical cost tracking)
+            cost = item.product.cost or Decimal('0.00')
+            total_cost += cost * item.quantity
+    
+    # Profit = Revenue - Cost
+    profit = total_revenue - total_cost
+    
+    return Response({
+        'total_revenue': float(total_revenue),
+        'total_cost': float(total_cost),
+        'profit': float(profit)
+    })
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def edit_delete_comment(request, comment_id):
+    """
+    PUT: Edit a pending comment (only by the owner, only if not approved)
+    DELETE: Delete a pending comment (only by the owner, only if not approved)
+    """
+    try:
+        comment = Comment.objects.get(id=comment_id)
+    except Comment.DoesNotExist:
+        return Response({'error': 'Comment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Only the owner can edit/delete
+    if comment.user != request.user:
+        return Response({'error': 'You do not have permission to modify this comment.'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Only if not approved
+    if comment.approved:
+        return Response({'error': 'Approved comments cannot be edited or deleted.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == 'PUT':
+        new_text = request.data.get('text')
+        if not new_text:
+            return Response({'error': 'Text is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        comment.text = new_text
+        comment.save()
+        from .serializers import CommentSerializer
+        return Response({'message': 'Comment updated successfully.', 'comment': CommentSerializer(comment).data})
+
+    elif request.method == 'DELETE':
+        comment.delete()
+        return Response({'message': 'Comment deleted successfully.'})
