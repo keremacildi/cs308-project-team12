@@ -29,6 +29,8 @@ var/
 # Django media/static
 staticfiles/
 staticfiles_build/
+media/
+
 
 # Django migrations (optional - uncomment if you don't want to track migrations)
 # */migrations/*.py
