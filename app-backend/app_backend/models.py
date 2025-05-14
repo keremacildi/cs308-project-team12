@@ -5,7 +5,71 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from .utils import encrypt_sensitive_data, decrypt_sensitive_data
 
+
+class SensitiveData(models.Model):
+    """
+    Model to store sensitive user data with encryption.
+    """
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='sensitive_data')
+    credit_card_number = models.CharField(max_length=255, blank=True, null=True)
+    tax_id = models.CharField(max_length=255, blank=True, null=True)
+    home_address = models.CharField(max_length=500, blank=True, null=True)
+    phone_number = models.CharField(max_length=255, blank=True, null=True)
+    date_of_birth = models.CharField(max_length=255, blank=True, null=True)
+    
+    def __str__(self):
+        return f"Sensitive data for {self.user.username}"
+    
+    def save(self, *args, **kwargs):
+        # Encrypt sensitive fields before saving
+        if self.credit_card_number:
+            self.credit_card_number = encrypt_sensitive_data(self.credit_card_number)
+        
+        if self.tax_id:
+            self.tax_id = encrypt_sensitive_data(self.tax_id)
+        
+        if self.home_address:
+            self.home_address = encrypt_sensitive_data(self.home_address)
+        
+        if self.phone_number:
+            self.phone_number = encrypt_sensitive_data(self.phone_number)
+        
+        if self.date_of_birth:
+            self.date_of_birth = encrypt_sensitive_data(self.date_of_birth)
+        
+        super().save(*args, **kwargs)
+    
+    def get_credit_card_number(self):
+        """Get decrypted credit card number."""
+        if self.credit_card_number:
+            return decrypt_sensitive_data(self.credit_card_number)
+        return None
+    
+    def get_tax_id(self):
+        """Get decrypted tax ID."""
+        if self.tax_id:
+            return decrypt_sensitive_data(self.tax_id)
+        return None
+    
+    def get_home_address(self):
+        """Get decrypted home address."""
+        if self.home_address:
+            return decrypt_sensitive_data(self.home_address)
+        return None
+    
+    def get_phone_number(self):
+        """Get decrypted phone number."""
+        if self.phone_number:
+            return decrypt_sensitive_data(self.phone_number)
+        return None
+    
+    def get_date_of_birth(self):
+        """Get decrypted date of birth."""
+        if self.date_of_birth:
+            return decrypt_sensitive_data(self.date_of_birth)
+        return None
 
 
 class Category(models.Model):
@@ -104,4 +168,13 @@ class Comment(models.Model):
 
     def __str__(self):
         return f"{self.user.username} commented on {self.product.title}"
+
+# Signal to create SensitiveData instance when a User is created
+@receiver(post_save, sender=User)
+def create_sensitive_data(sender, instance, created, **kwargs):
+    """
+    Create a SensitiveData instance when a new User is created.
+    """
+    if created:
+        SensitiveData.objects.create(user=instance)
 

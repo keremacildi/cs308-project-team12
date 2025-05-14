@@ -11,26 +11,29 @@ from django.conf import settings
 from django.dispatch import receiver
 from django.contrib.auth.signals import user_logged_in
 from django.contrib.admin.views.decorators import staff_member_required
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.authentication import SessionAuthentication
 from .permissions import IsStaff
-from django.db import models
-import smtplib
+from django.db import models, transaction
 from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Product,  Order, OrderItem, Rating,
     Comment,    
     Category,   )
 from django.contrib.auth.models import User
+from django.contrib.auth import authenticate, login, logout
+from django.middleware.csrf import get_token
 from .serializers import (
     OrderSerializer,  
     ProductSerializer,   
     CategorySerializer,   UserCreateSerializer,
-    UserSerializer, UserUpdateSerializer,RatingSerializer,CommentSerializer
+    UserSerializer, UserUpdateSerializer,RatingSerializer,CommentSerializer,
+    SensitiveDataSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
@@ -38,8 +41,17 @@ import os
 from decimal import Decimal
 import smtplib
 from dotenv import load_dotenv
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+import logging
+from .utils import (
+    validate_email, validate_username, validate_password,
+    validate_text_input, validate_numeric_input, validate_id
+)
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # --- Home View ---
 def home(request):
@@ -529,71 +541,104 @@ def order_history(request):
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-from django.contrib.auth import authenticate, login
-from django.middleware.csrf import get_token
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
-from rest_framework.authentication import SessionAuthentication
-from rest_framework.response import Response
-from rest_framework import status
-from .serializers import UserSerializer
-
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@authentication_classes([SessionAuthentication])
 def login_api(request):
-    # 1. grab credentials
+    """
+    API endpoint for user login.
+    """
+    # Get credentials from request data
     email = request.data.get('email')
     password = request.data.get('password')
+    
+    # Validate input data
     if not email or not password:
         return Response(
             {'error': 'Please provide both email and password'},
             status=status.HTTP_400_BAD_REQUEST
         )
+    
+    # Validate email format
+    try:
+        validate_email(email)
+    except ValidationError as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Rate limiting check (prevent brute force attacks)
+    client_ip = request.META.get('REMOTE_ADDR')
+    cache_key = f"login_attempts:{client_ip}"
+    login_attempts = cache.get(cache_key, 0)
+    
+    # If too many attempts, block temporarily
+    if login_attempts >= 5:  # 5 attempts allowed
+        return Response(
+            {'error': 'Too many login attempts. Please try again later.'},
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+    
+    # Try to authenticate
     try:
         user_obj = User.objects.get(email=email)
     except User.DoesNotExist:
-        user = None
-    else:
-        user = authenticate(request, username=user_obj.username, password=password)
-    # 2. authenticate
-    if user is None:
+        # Increment failed attempts
+        cache.set(cache_key, login_attempts + 1, 300)  # 5 minutes timeout
         return Response(
-            {'error': 'Invalid credentials xd'},
+            {'error': 'Invalid credentials'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-
-    # 3. log them in (creates a session)
+    
+    # Authenticate with username and password
+    user = authenticate(request, username=user_obj.username, password=password)
+    if user is None:
+        # Increment failed attempts
+        cache.set(cache_key, login_attempts + 1, 300)  # 5 minutes timeout
+        return Response(
+            {'error': 'Invalid credentials'},
+            status=status.HTTP_401_UNAUTHORIZED
+        )
+    
+    # Reset login attempts on successful login
+    cache.delete(cache_key)
+    
+    # Log the user in (creates a session)
     login(request, user)
-
-    # 4. issue a fresh CSRF token
+    
+    # Get a fresh CSRF token
     csrf_token = get_token(request)
-
-    # 5. build your DRF Response
+    
+    # Create response
     resp = Response({
         'message': 'Login successful',
         'user': UserSerializer(user).data
     }, status=status.HTTP_200_OK)
-
-    # 6. send the CSRF token so your JS can read it
+    
+    # Set CSRF cookie with secure settings
     resp.set_cookie(
         'csrftoken',
         csrf_token,
-        httponly=False,   # allow JS → X-CSRFToken header
+        httponly=False,   # Allow JS to read for X-CSRFToken header
         samesite='Lax',
-        secure=False      # switch to True under HTTPS
+        secure=settings.CSRF_COOKIE_SECURE,  # True in production
+        max_age=3600 * 24 * 7  # 7 days
     )
-
-    # 7. explicitly send the sessionid cookie
+    
+    # Set session cookie with secure settings
     resp.set_cookie(
         'sessionid',
         request.session.session_key,
-        httponly=True,    # keep this secure
+        httponly=True,    # Prevent JavaScript access
         samesite='Lax',
-        secure=False
+        secure=settings.SESSION_COOKIE_SECURE,  # True in production
+        max_age=3600 * 24 * 1  # 1 day
     )
-
+    
+    # Log successful login
+    logger.info(f"User {user.username} logged in successfully from {client_ip}")
+    
     return resp
 
 @api_view(['POST'])
@@ -683,38 +728,60 @@ def reset_password(request):
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_api(request):
     """
     API endpoint for user registration.
-    Expects:
-    {
-        "username": "string",
-        "email": "string",
-        "password": "string",
-        "confirm_password": "string",
-        "first_name": "string",
-        "last_name": "string",
-        "profile": {
-            "home_address": "string",
-            "role": "customer"
-        }
-    }
     """
+    # Rate limiting check
+    client_ip = request.META.get('REMOTE_ADDR')
+    cache_key = f"register_attempts:{client_ip}"
+    register_attempts = cache.get(cache_key, 0)
+    
+    # If too many attempts, block temporarily
+    if register_attempts >= 3:  # 3 attempts allowed
+        return Response(
+            {'error': 'Too many registration attempts. Please try again later.'},
+            status=status.HTTP_429_TOO_MANY_REQUESTS
+        )
+    
+    # Validate input data using serializer
     serializer = UserCreateSerializer(data=request.data)
-    print(request.data)
+    
     if serializer.is_valid():
-        user = serializer.save()
-        print(serializer.data)
-        # Create a UserSerializer instance to return the user data
-        user_serializer = UserSerializer(user)
-        return Response({
-            'message': 'User registered successfully',
-            'user': user_serializer.data
-        }, status=status.HTTP_201_CREATED)
+        try:
+            # Create the user
+            user = serializer.save()
+            
+            # Reset registration attempts on success
+            cache.delete(cache_key)
+            
+            # Create a UserSerializer instance to return the user data
+            user_serializer = UserSerializer(user)
+            
+            # Log successful registration
+            logger.info(f"New user {user.username} registered from {client_ip}")
+            
+            return Response({
+                'message': 'User registered successfully',
+                'user': user_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            # Log the error
+            logger.error(f"Registration error: {str(e)}", exc_info=True)
+            
+            # Increment failed attempts
+            cache.set(cache_key, register_attempts + 1, 300)  # 5 minutes timeout
+            
+            return Response(
+                {'error': 'An error occurred during registration'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    # Increment failed attempts on validation error
+    cache.set(cache_key, register_attempts + 1, 300)  # 5 minutes timeout
+    
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'PUT'])
@@ -887,210 +954,181 @@ def serve_media_file(request, filename):
     return FileResponse(open(file_path, 'rb'))
 
 @api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def ratings_api(request):
     """
-    GET: Fetch ratings with optional filtering by product_id and user_id
+    GET: Get all ratings
     POST: Create a new rating
     """
     if request.method == 'GET':
-        # Get filter parameters
-        product_id = request.query_params.get('product')
+        # Get user ID from query parameters
         user_id = request.query_params.get('user')
+        product_id = request.query_params.get('product')
         
-        # Apply filters if provided
-        ratings = Rating.objects.all()
+        # Validate IDs if provided
+        if user_id:
+            try:
+                user_id = validate_id(user_id, "User ID")
+            except ValidationError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
         if product_id:
-            ratings = ratings.filter(product_id=product_id)
+            try:
+                product_id = validate_id(product_id, "Product ID")
+            except ValidationError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter ratings
+        ratings = Rating.objects.all()
         if user_id:
             ratings = ratings.filter(user_id=user_id)
-            
+        if product_id:
+            ratings = ratings.filter(product_id=product_id)
+        
+        # Serialize and return
         serializer = RatingSerializer(ratings, many=True)
         return Response(serializer.data)
     
     elif request.method == 'POST':
-        # This is the existing create_rating functionality
-        try:
-            print(request.data)
-            product_id = request.data.get('product_id')
-            user_id = request.data.get('user_id')
-            rating_value = request.data.get('rating')
-            
-            if not product_id or not user_id or not rating_value:
-                return Response(
-                    {'error': 'Product ID, user ID, and rating are required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-                
-            # Validate rating value
-            try:
-                rating_value = int(rating_value)
-                if rating_value < 1 or rating_value > 5:
-                    return Response(
-                        {'error': 'Rating must be between 1 and 5'},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            except (ValueError, TypeError):
-                return Response(
-                    {'error': 'Rating must be a number'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-                
-            # Get product
-            try:
-                product = Product.objects.get(id=product_id)
-            except Product.DoesNotExist:
-                return Response(
-                    {'error': 'Product not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            # Get user
-            try:
-                user = User.objects.get(id=user_id)
-            except User.DoesNotExist:
-                return Response(
-                    {'error': 'User not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-                
-            # Check if user has already rated this product
-            existing_rating = Rating.objects.filter(
-                user=user,
-                product=product
-            ).first()
-            
-            if existing_rating:
-                # Update existing rating
-                existing_rating.score = rating_value
-                existing_rating.save()
-                message = 'Rating updated successfully'
-            else:
-                # Create new rating
-                Rating.objects.create(
-                    user=user,
-                    product=product,
-                    score=rating_value
-                )
-                message = 'Rating created successfully'
-            
-            
-            return Response({
-                'message': message,
-                'product_id': product.id,
-                'user_id': user.id,
-                'rating': rating_value,
-                'avg_rating': product.avg_rating
-            })
-            
-        except Exception as e:
+        # Get authenticated user
+        user = request.user
+        
+        # Get product ID from request data
+        product_id = request.data.get('product')
+        if not product_id:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': 'Product ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
             )
-
+        
+        # Validate product ID
+        try:
+            product_id = validate_id(product_id, "Product ID")
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get product
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {'error': 'Product not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if user has already rated this product
+        if Rating.objects.filter(user=user, product=product).exists():
+            # Update existing rating
+            rating = Rating.objects.get(user=user, product=product)
+            serializer = RatingSerializer(rating, data=request.data)
+        else:
+            # Create new rating
+            serializer = RatingSerializer(data=request.data)
+        
+        # Validate and save
+        if serializer.is_valid():
+            # Set user if not provided
+            if 'user' not in serializer.validated_data:
+                serializer.validated_data['user'] = user
+            
+            # Save the rating
+            serializer.save()
+            
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def comments_api(request):
     """
-    GET: Fetch comments with optional filtering by product_id and user_id
+    GET: Get all comments
     POST: Create a new comment
     """
     if request.method == 'GET':
-        # Get filter parameters
-        product_id = request.query_params.get('product')
+        # Get query parameters
         user_id = request.query_params.get('user')
+        product_id = request.query_params.get('product')
+        approved = request.query_params.get('approved')
         
-        # Apply filters if provided
-        comments = Comment.objects.all()
+        # Validate IDs if provided
+        if user_id:
+            try:
+                user_id = validate_id(user_id, "User ID")
+            except ValidationError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
         if product_id:
-            comments = comments.filter(product_id=product_id)
+            try:
+                product_id = validate_id(product_id, "Product ID")
+            except ValidationError as e:
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Filter comments
+        comments = Comment.objects.all()
         if user_id:
             comments = comments.filter(user_id=user_id)
-            
+        if product_id:
+            comments = comments.filter(product_id=product_id)
+        
+        # Filter by approval status
+        if approved is not None:
+            approved_bool = approved.lower() == 'true'
+            comments = comments.filter(approved=approved_bool)
+        
+        # Serialize and return
         serializer = CommentSerializer(comments, many=True)
         return Response(serializer.data)
     
     elif request.method == 'POST':
-        # This is the existing create_comment functionality
-        try:
-            print(request.data)
-            product_id = request.data.get('product_id')
-            user_id = request.data.get('user_id')
-            comment_text = request.data.get('comment_text')
-            
-            if not product_id or not comment_text:
-                return Response(
-                    {'error': 'Product ID and comment text are required'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-                
-            # If user_id is provided, get user name from user
-            if user_id:
-                try:
-                    user = User.objects.get(id=user_id)
-                    user_name = f"{user.first_name} {user.last_name}".strip()
-                    if not user_name:
-                        user_name = user.username
-                except User.DoesNotExist:
-                    return Response(
-                        {'error': 'User not found'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-            elif not user_name:
-                return Response(
-                    {'error': 'Either user_id or user_name must be provided'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-                
-            # Get product
-            try:
-                product = Product.objects.get(id=product_id)
-            except Product.DoesNotExist:
-                return Response(
-                    {'error': 'Product not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-                
-            # Check if user has already commented on this product
-            existing_comment = Comment.objects.filter(
-                user=user,
-                product=product
-            ).first()
-            
-            if existing_comment:
-                # Update existing comment
-                existing_comment.text = comment_text
-                existing_comment.save()
-                message = 'Comment updated successfully'
-                comment = existing_comment
-            else:
-                # Create comment
-                comment = Comment.objects.create(
-                    product=product,
-                    user=user,
-                    text=comment_text
-                )
-                message = 'Comment added successfully'
-            
-            # Return the created/updated comment
-            return Response({
-                'message': message,
-                'comment': {
-                    'id': comment.id,
-                    'product_id': product.id,
-                    'user_name': comment.user.username,
-                    'comment_text': comment.text,
-                    'created_at': comment.created_at
-                }
-            }, status=status.HTTP_201_CREATED)
-            
-        except Exception as e:
+        # Get authenticated user
+        user = request.user
+        
+        # Get product ID from request data
+        product_id = request.data.get('product')
+        if not product_id:
             return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': 'Product ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
             )
+        
+        # Validate product ID
+        try:
+            product_id = validate_id(product_id, "Product ID")
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get product
+        try:
+            product = Product.objects.get(id=product_id)
+        except Product.DoesNotExist:
+            return Response(
+                {'error': 'Product not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Validate comment text
+        text = request.data.get('text')
+        try:
+            validate_text_input(text, field_name="Comment text", min_length=3, max_length=1000)
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create serializer with data
+        serializer = CommentSerializer(data=request.data)
+        
+        # Validate and save
+        if serializer.is_valid():
+            # Set user if not provided
+            if 'user' not in serializer.validated_data:
+                serializer.validated_data['user'] = user
+            
+            # Save the comment (initially not approved)
+            comment = serializer.save(approved=False)
+            
+            return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -1178,3 +1216,35 @@ def edit_delete_comment(request, comment_id):
     elif request.method == 'DELETE':
         comment.delete()
         return Response({'message': 'Comment deleted successfully.'})
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def sensitive_data_api(request):
+    """
+    GET: Get the user's sensitive data
+    PUT: Update the user's sensitive data
+    """
+    # Get authenticated user
+    user = request.user
+    
+    try:
+        # Get or create sensitive data for the user
+        sensitive_data, created = SensitiveData.objects.get_or_create(user=user)
+        
+        if request.method == 'GET':
+            serializer = SensitiveDataSerializer(sensitive_data)
+            return Response(serializer.data)
+        
+        elif request.method == 'PUT':
+            serializer = SensitiveDataSerializer(sensitive_data, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    except Exception as e:
+        logger.error(f"Error processing sensitive data: {str(e)}", exc_info=True)
+        return Response(
+            {'error': 'An error occurred while processing sensitive data'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

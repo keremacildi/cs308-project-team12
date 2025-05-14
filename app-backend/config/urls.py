@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/auth/profile/', views.user_profile, name='api_user_profile'),
     path('api/auth/change-password/', views.change_password, name='api_change_password'),
     path('api/auth/check/', views.check_auth, name='api_check_auth'),
+    path('api/auth/sensitive-data/', views.sensitive_data_api, name='api_sensitive_data'),
 
     # Ratings & Comments - combined view functions that handle different HTTP methods
     path('api/ratings/', views.ratings_api, name='api_ratings'),
