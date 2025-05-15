@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/orders/<int:order_id>/cancel/', views.cancel_order, name='api_cancel_order'),
     path('api/orders/<int:order_id>/refund/', views.refund_order, name='api_refund_order'),
     path('api/orders/<int:order_id>/invoice/', views.download_invoice, name='api_download_invoice'),
+    path('api/orders/<int:order_id>/change_status/', views.change_order_status, name='api_change_order_status'),
     
     # Auth
     path('api/auth/login/', csrf_exempt(views.login_api), name='api_login'),
@@ -44,6 +45,20 @@ urlpatterns = [
 
     # Revenue/Profit report
     path('api/revenue/', views.revenue_report, name='api_revenue_report'),
+
+    # Product manager (admin) product management
+    path('api/admin/products/', views.admin_list_products, name='admin_list_products'),
+    path('api/admin/products/create/', views.admin_create_product, name='admin_create_product'),
+    path('api/admin/products/<int:product_id>/', views.admin_product_detail, name='admin_product_detail'),
+    path('api/admin/orders/', views.admin_list_orders, name='admin_list_orders'),
+
+    # Refund requests (selective product returns)
+    path('api/orders/refund-request/', views.request_refund, name='request_refund'),
+    path('api/admin/refund-requests/', views.list_refund_requests, name='list_refund_requests'),
+    path('api/admin/refund-requests/<int:refund_request_id>/process/', views.process_refund_request, name='process_refund_request'),
+
+    # Product manager (admin) delivery tools
+    path('api/admin/delivery-list/', views.admin_delivery_list, name='admin_delivery_list'),
 ]
 
 # Serve media files in development

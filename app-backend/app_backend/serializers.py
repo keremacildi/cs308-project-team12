@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Product,  Category,  
      Order, OrderItem,
-    Rating, Comment, SensitiveData
+    Rating, Comment, SensitiveData, RefundRequest
 )
 from django.contrib.auth.models import User
 from decimal import Decimal
@@ -473,3 +473,34 @@ class SensitiveDataSerializer(serializers.ModelSerializer):
         # Save the instance (encryption happens in the model's save method)
         instance.save()
         return instance
+
+
+class RefundRequestSerializer(serializers.ModelSerializer):
+    order_item_info = OrderItemSerializer(source='order_item', read_only=True)
+    user_info = UserSerializer(source='user', read_only=True)
+    approved_by_info = UserSerializer(source='approved_by', read_only=True)
+
+    class Meta:
+        model = RefundRequest
+        fields = [
+            'id', 'order_item', 'order_item_info', 'user', 'user_info',
+            'status', 'request_date', 'decision_date', 'approved_by', 'approved_by_info',
+            'refund_amount', 'reason'
+        ]
+        read_only_fields = ['id', 'status', 'request_date', 'decision_date', 'approved_by', 'refund_amount']
+
+    def validate(self, data):
+        # Ensure order item belongs to user and is delivered, and within 30 days
+        order_item = data.get('order_item')
+        user = data.get('user')
+        if order_item is None or user is None:
+            raise serializers.ValidationError('Order item and user are required.')
+        order = order_item.order
+        if order.user != user:
+            raise serializers.ValidationError('You can only request a refund for your own orders.')
+        if order.status != 'delivered':
+            raise serializers.ValidationError('Refunds can only be requested for delivered orders.')
+        from django.utils import timezone
+        if (timezone.now() - order.created_at).days > 30:
+            raise serializers.ValidationError('Refund requests must be made within 30 days of delivery.')
+        return data

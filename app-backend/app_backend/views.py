@@ -24,7 +24,8 @@ from django.views.decorators.csrf import csrf_exempt
 from .models import (
     Product,  Order, OrderItem, Rating,
     Comment,    
-    Category,   )
+    Category,   RefundRequest, SensitiveData
+)
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate, login, logout
 from django.middleware.csrf import get_token
@@ -33,7 +34,7 @@ from .serializers import (
     ProductSerializer,   
     CategorySerializer,   UserCreateSerializer,
     UserSerializer, UserUpdateSerializer,RatingSerializer,CommentSerializer,
-    SensitiveDataSerializer
+    SensitiveDataSerializer, RefundRequestSerializer
 )
 from django.utils.crypto import get_random_string
 from datetime import timedelta
@@ -48,6 +49,7 @@ from .utils import (
     validate_email, validate_username, validate_password,
     validate_text_input, validate_numeric_input, validate_id
 )
+from rest_framework.parsers import JSONParser
 
 load_dotenv()
 
@@ -1248,3 +1250,226 @@ def sensitive_data_api(request):
             {'error': 'An error occurred while processing sensitive data'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def change_order_status(request, order_id):
+    """
+    Allows staff (product managers) to change the delivery status of an order.
+    Expects JSON: { "status": "in_transit" | "delivered" | "processing" }
+    Triggers workflows (e.g., email) on delivery.
+    """
+    from django.core.mail import send_mail
+    from django.conf import settings
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Validate status
+    valid_statuses = ['processing', 'in_transit', 'delivered']
+    status_value = request.data.get('status')
+    if status_value not in valid_statuses:
+        return Response({
+            'error': f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Get order
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    old_status = order.status
+    order.status = status_value
+    order.save()
+
+    # Log the status change
+    logger.info(f"Order {order.id} status changed from {old_status} to {status_value} by {request.user.username}")
+
+    # Trigger workflow: send email if delivered
+    if status_value == 'delivered':
+        try:
+            send_mail(
+                'Your Order Has Been Delivered',
+                f'Your order #{order.id} has been marked as delivered. Thank you for shopping with us!',
+                settings.DEFAULT_FROM_EMAIL if hasattr(settings, 'DEFAULT_FROM_EMAIL') else 'noreply@example.com',
+                [order.user.email],
+                fail_silently=True,
+            )
+            logger.info(f"Delivery confirmation email sent for order {order.id}")
+        except Exception as e:
+            logger.error(f"Failed to send delivery email for order {order.id}: {str(e)}")
+
+    # Return updated order info
+    from .serializers import OrderSerializer
+    serializer = OrderSerializer(order)
+    return Response({
+        'message': f"Order status updated to {status_value}",
+        'order': serializer.data
+    })
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_list_products(request):
+    """List all products (admin only, with optional search/filter)."""
+    products = Product.objects.all()
+    # Optional: add filtering by query params (e.g., ?q=search)
+    q = request.query_params.get('q')
+    if q:
+        products = products.filter(title__icontains=q)
+    serializer = ProductSerializer(products, many=True, context={'request': request})
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def admin_create_product(request):
+    """Create a new product (admin only)."""
+    serializer = ProductSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAdminUser])
+def admin_product_detail(request, product_id):
+    """Retrieve, update, or delete a product (admin only)."""
+    try:
+        product = Product.objects.get(pk=product_id)
+    except Product.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = ProductSerializer(product, context={'request': request})
+        return Response(serializer.data)
+    elif request.method == 'PUT':
+        serializer = ProductSerializer(product, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    elif request.method == 'DELETE':
+        product.delete()
+        return Response({'message': 'Product deleted successfully.'})
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_list_orders(request):
+    """List all orders (admin only, with optional filters: status, user, date)."""
+    orders = Order.objects.all().select_related('user').prefetch_related('items__product')
+    status_param = request.query_params.get('status')
+    user_param = request.query_params.get('user')
+    date_param = request.query_params.get('date')
+    if status_param:
+        orders = orders.filter(status=status_param)
+    if user_param:
+        orders = orders.filter(user__id=user_param)
+    if date_param:
+        orders = orders.filter(created_at__date=date_param)
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def request_refund(request):
+    """
+    Customer requests a refund for a specific product in a delivered order (within 30 days).
+    Expects: {"order_item": <order_item_id>, "reason": "..."}
+    """
+    user = request.user
+    order_item_id = request.data.get('order_item')
+    reason = request.data.get('reason', '')
+    if not order_item_id:
+        return Response({'error': 'Order item ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        order_item = OrderItem.objects.get(id=order_item_id)
+    except OrderItem.DoesNotExist:
+        return Response({'error': 'Order item not found.'}, status=status.HTTP_404_NOT_FOUND)
+    # Check if already refunded
+    if RefundRequest.objects.filter(order_item=order_item, user=user, status='approved').exists():
+        return Response({'error': 'Refund already approved for this item.'}, status=status.HTTP_400_BAD_REQUEST)
+    # Validate via serializer
+    serializer = RefundRequestSerializer(data={
+        'order_item': order_item.id,
+        'user': user.id,
+        'reason': reason
+    })
+    serializer.is_valid(raise_exception=True)
+    refund_request = serializer.save()
+    return Response(RefundRequestSerializer(refund_request).data, status=status.HTTP_201_CREATED)
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def list_refund_requests(request):
+    """List all refund requests (staff only, with optional status filter)."""
+    status_param = request.query_params.get('status')
+    qs = RefundRequest.objects.all().select_related('order_item', 'user', 'approved_by')
+    if status_param:
+        qs = qs.filter(status=status_param)
+    serializer = RefundRequestSerializer(qs, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def process_refund_request(request, refund_request_id):
+    """
+    Approve or reject a refund request (staff only).
+    Expects: {"action": "approve"|"reject"}
+    """
+    try:
+        refund_request = RefundRequest.objects.select_related('order_item', 'user').get(id=refund_request_id)
+    except RefundRequest.DoesNotExist:
+        return Response({'error': 'Refund request not found.'}, status=status.HTTP_404_NOT_FOUND)
+    if refund_request.status != 'pending':
+        return Response({'error': 'Refund request already processed.'}, status=status.HTTP_400_BAD_REQUEST)
+    action = request.data.get('action')
+    if action not in ['approve', 'reject']:
+        return Response({'error': 'Invalid action.'}, status=status.HTTP_400_BAD_REQUEST)
+    refund_request.decision_date = timezone.now()
+    refund_request.approved_by = request.user
+    if action == 'approve':
+        # Calculate refund amount (discounted price if available)
+        item = refund_request.order_item
+        refund_price = item.discounted_price if item.discounted_price else item.price_at_purchase
+        refund_request.refund_amount = refund_price * item.quantity
+        refund_request.status = 'approved'
+        # Restock product
+        item.product.quantity_in_stock += item.quantity
+        item.product.save()
+        # Notify customer
+        from django.core.mail import send_mail
+        from django.conf import settings
+        send_mail(
+            'Refund Approved',
+            f'Your refund for {item.product.title} (Order #{item.order.id}) has been approved. Refunded Amount: ${refund_request.refund_amount:.2f}.',
+            settings.DEFAULT_FROM_EMAIL if hasattr(settings, 'DEFAULT_FROM_EMAIL') else 'noreply@example.com',
+            [refund_request.user.email],
+            fail_silently=True,
+        )
+    else:
+        refund_request.status = 'rejected'
+    refund_request.save()
+    return Response(RefundRequestSerializer(refund_request).data)
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_delivery_list(request):
+    """
+    Returns a flat delivery list for all order items, with delivery status and details.
+    """
+    from collections import OrderedDict
+    delivery_items = []
+    order_items = OrderItem.objects.select_related('order', 'product', 'order__user')
+    for item in order_items:
+        order = item.order
+        delivery_items.append(OrderedDict([
+            ('delivery_id', item.id),
+            ('order_id', order.id),
+            ('customer_id', order.user.id),
+            ('product_id', item.product.id),
+            ('quantity', item.quantity),
+            ('total_price', float(item.price_at_purchase) * item.quantity),
+            ('delivery_address', getattr(order, 'delivery_address', None)),
+            ('delivery_completed', order.status == 'delivered'),
+        ]))
+    return Response(delivery_items)
