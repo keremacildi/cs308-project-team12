@@ -1,7 +1,13 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+<<<<<<< HEAD
 import { api } from '../../lib/api';
+=======
+import { Mail, Lock, CheckCircle, AlertCircle } from 'lucide-react';
+import apiClient from '../../utils/apiClient';
+import Image from "next/image";
+>>>>>>> 45eec83eadef4456dd4a1172bcf962ed49533f24
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
@@ -112,12 +118,17 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-600 to-indigo-900 flex items-center justify-center p-6">
-            <div className="w-full max-w-md backdrop-blur-lg bg-white/90 rounded-3xl shadow-2xl p-8 transition-all duration-300 hover:shadow-blue-900/20">
+            <div className="w-full max-w-md backdrop-blur-lg bg-white/80 rounded-3xl shadow-2xl p-8 transition-all duration-300 hover:shadow-blue-900/30 hover:border-2 hover:border-blue-400/60 border border-transparent group relative">
+                {/* Logo/Icon */}
+                <div className="flex justify-center mb-6">
+                    <div className="bg-blue-100 rounded-full p-3 shadow-md">
+                        <span className="text-3xl">🛒</span>
+                    </div>
+                </div>
                 <div className="text-center mb-8">
                     <h2 className="text-3xl font-extrabold text-gray-800 mb-2">Welcome Back</h2>
                     <p className="text-gray-600">Sign in to your CS308 Store account</p>
                 </div>
-                
                 {error && (
                     <div className="mb-6 p-4 rounded-lg bg-red-50 text-red-600 animate-[shake_0.5s_ease]">
                         <p className="flex items-center">
@@ -128,7 +139,6 @@ export default function LoginPage() {
                         </p>
                     </div>
                 )}
-                
                 <form onSubmit={handleLogin} className="space-y-6">
                     <div>
                         <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1 ml-1">Email Address</label>
@@ -146,11 +156,10 @@ export default function LoginPage() {
                                 onChange={(e) => setEmail(e.target.value)}
                                 placeholder="you@example.com"
                                 required
-                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"
+                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 focus:outline-none focus:border-blue-400 shadow-sm transition-all duration-200 focus:shadow-lg"
                             />
                         </div>
                     </div>
-                    
                     <div>
                         <div className="flex items-center justify-between mb-1">
                             <label htmlFor="password" className="block text-sm font-medium text-gray-700 ml-1">Password</label>
@@ -171,11 +180,10 @@ export default function LoginPage() {
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="••••••••"
                                 required
-                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 shadow-sm"
+                                className="block w-full pl-10 pr-3 py-4 border-0 rounded-xl text-gray-900 bg-gray-50 focus:ring-2 focus:ring-blue-600 focus:outline-none focus:border-blue-400 shadow-sm transition-all duration-200 focus:shadow-lg"
                             />
                         </div>
                     </div>
-                    
                     <button 
                         type="submit"
                         className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-medium rounded-xl shadow-lg hover:shadow-blue-500/30 hover:translate-y-[-2px] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2"
@@ -183,7 +191,6 @@ export default function LoginPage() {
                         Sign In
                     </button>
                 </form>
-                
                 <div className="mt-8 text-center">
                     <p className="text-gray-700">
                         Don&apos;t have an account?{" "}
@@ -191,6 +198,10 @@ export default function LoginPage() {
                             Create an account
                         </Link>
                     </p>
+                </div>
+                {/* Slogan/Branding */}
+                <div className="mt-8 text-center text-xs text-gray-400 select-none">
+                    Powered by <span className="font-semibold text-blue-600">CS308 Store</span>
                 </div>
             </div>
         </div>

@@ -21,7 +21,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
-
+.venv
 # Django SQLite database
 *.sqlite3
 *.sqlite3-journal
@@ -29,6 +29,8 @@ var/
 # Django media/static
 staticfiles/
 staticfiles_build/
+media/
+
 
 # Django migrations (optional - uncomment if you don't want to track migrations)
 # */migrations/*.py
