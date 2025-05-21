@@ -1,13 +1,10 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-<<<<<<< HEAD
 import { api } from '../../lib/api';
-=======
 import { Mail, Lock, CheckCircle, AlertCircle } from 'lucide-react';
 import apiClient from '../../utils/apiClient';
 import Image from "next/image";
->>>>>>> 45eec83eadef4456dd4a1172bcf962ed49533f24
 
 export default function LoginPage() {
     const [email, setEmail] = useState("");
@@ -55,6 +52,7 @@ export default function LoginPage() {
             console.log('Attempting login with:', { email, password });
             
             try {
+                document.cookie = 'sessionid=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
                 const data = await api.auth.login({ email, password });
                 console.log('Login response data:', data);
 
@@ -82,8 +80,15 @@ export default function LoginPage() {
                 
                 setSuccess(true);
 
-                // Redirect based on user type
-                const redirectPath = data.user.is_staff ? "/" : "/";
+                // Redirect based on user role
+                let redirectPath = "/";
+                if (data.user.role === "sales_manager") {
+                  redirectPath = "/admin/sales-manager";
+                } else if (data.user.role === "product_manager") {
+                  redirectPath = "/admin/product-manager";
+                } else if (data.user.role === "customer") {
+                  redirectPath = "/";
+                }
                 setTimeout(() => (window.location.href = redirectPath), 2000);
             } catch (err) {
                 console.error('Login error:', err);

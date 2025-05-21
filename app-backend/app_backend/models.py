@@ -6,6 +6,7 @@ from django.dispatch import receiver
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 from .utils import encrypt_sensitive_data, decrypt_sensitive_data
+from django.conf import settings
 
 
 class SensitiveData(models.Model):
@@ -187,6 +188,18 @@ class RefundRequest(models.Model):
     def __str__(self):
         return f"RefundRequest for {self.order_item} by {self.user.username} ({self.status})"
 
+class UserProfile(models.Model):
+    ROLE_CHOICES = [
+        ('customer', 'Customer'),
+        ('sales_manager', 'Sales Manager'),
+        ('product_manager', 'Product Manager'),
+    ]
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
+
+    def __str__(self):
+        return f"{self.user.username} ({self.role})"
+
 # Signal to create SensitiveData instance when a User is created
 @receiver(post_save, sender=User)
 def create_sensitive_data(sender, instance, created, **kwargs):
@@ -195,4 +208,14 @@ def create_sensitive_data(sender, instance, created, **kwargs):
     """
     if created:
         SensitiveData.objects.create(user=instance)
+
+# Signal to create UserProfile instance when a User is created
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)
+
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    instance.profile.save()
 

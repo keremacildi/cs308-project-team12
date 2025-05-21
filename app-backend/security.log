@@ -1,0 +1,150 @@
+ERROR 2025-05-21 02:30:35,994 middleware API Error: User has no profile.
+Traceback (most recent call last):
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/core/handlers/base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/admin/options.py", line 716, in wrapper
+    return self.admin_site.admin_view(view)(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/decorators.py", line 188, in _view_wrapper
+    result = _process_exception(request, e)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/decorators.py", line 186, in _view_wrapper
+    response = view_func(request, *args, **kwargs)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/views/decorators/cache.py", line 80, in _view_wrapper
+    response = view_func(request, *args, **kwargs)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/admin/sites.py", line 240, in inner
+    return view(request, *args, **kwargs)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/admin/options.py", line 1948, in change_view
+    return self.changeform_view(request, object_id, form_url, extra_context)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/decorators.py", line 48, in _wrapper
+    return bound_method(*args, **kwargs)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/decorators.py", line 188, in _view_wrapper
+    result = _process_exception(request, e)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/decorators.py", line 186, in _view_wrapper
+    response = view_func(request, *args, **kwargs)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/admin/options.py", line 1804, in changeform_view
+    return self._changeform_view(request, object_id, form_url, extra_context)
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/admin/options.py", line 1855, in _changeform_view
+    self.save_model(request, new_object, form, not add)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/admin/options.py", line 1259, in save_model
+    obj.save()
+    ~~~~~~~~^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/contrib/auth/base_user.py", line 78, in save
+    super().save(*args, **kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/db/models/base.py", line 822, in save
+    self.save_base(
+    ~~~~~~~~~~~~~~^
+        using=using,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        update_fields=update_fields,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/db/models/base.py", line 924, in save_base
+    post_save.send(
+    ~~~~~~~~~~~~~~^
+        sender=origin,
+        ^^^^^^^^^^^^^^
+    ...<4 lines>...
+        using=using,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/dispatch/dispatcher.py", line 189, in send
+    response = receiver(signal=self, sender=sender, **named)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/app_backend/models.py", line 220, in save_user_profile
+    instance.profile.save()
+    ^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/db/models/fields/related_descriptors.py", line 525, in __get__
+    raise self.RelatedObjectDoesNotExist(
+    ...<2 lines>...
+    )
+django.contrib.auth.models.User.profile.RelatedObjectDoesNotExist: User has no profile.
+ERROR 2025-05-21 02:30:36,005 middleware API Error: .accepted_renderer not set on Response
+Traceback (most recent call last):
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/core/handlers/base.py", line 220, in _get_response
+    response = response.render()
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 114, in render
+    self.content = self.rendered_content
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/rest_framework/response.py", line 55, in rendered_content
+    assert renderer, ".accepted_renderer not set on Response"
+           ^^^^^^^^
+AssertionError: .accepted_renderer not set on Response
+WARNING 2025-05-21 02:59:31,298 log Forbidden (CSRF token from POST incorrect.): /admin/app_backend/userprofile/
+ERROR 2025-05-21 03:15:59,708 middleware Exception: No module named 'django.template.context_processors'
+ERROR 2025-05-21 03:15:59,709 middleware Request: <WSGIRequest: GET '/admin/app_backend/userprofile/'>
+ERROR 2025-05-21 03:15:59,709 middleware API Error: No module named 'django.template.context_processors'
+Traceback (most recent call last):
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/core/handlers/base.py", line 220, in _get_response
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 114, in render
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 92, in rendered_content
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/backends/django.py", line 61, in render
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/base.py", line 169, in render
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/context.py", line 251, in bind_template
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/functional.py", line 47, in __get__
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/engine.py", line 118, in template_context_processors
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/engine.py", line 118, in <genexpr>
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/module_loading.py", line 30, in import_string
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/module_loading.py", line 15, in cached_import
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'django.template.context_processors'
+ERROR 2025-05-21 03:16:01,969 middleware Exception: No module named 'django.template.context_processors'
+ERROR 2025-05-21 03:16:01,969 middleware Request: <WSGIRequest: GET '/admin/app_backend/userprofile/'>
+ERROR 2025-05-21 03:16:01,969 middleware API Error: No module named 'django.template.context_processors'
+Traceback (most recent call last):
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/core/handlers/base.py", line 220, in _get_response
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 114, in render
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 92, in rendered_content
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/backends/django.py", line 61, in render
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/base.py", line 169, in render
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/context.py", line 251, in bind_template
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/functional.py", line 47, in __get__
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/engine.py", line 118, in template_context_processors
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/engine.py", line 118, in <genexpr>
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/module_loading.py", line 30, in import_string
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/module_loading.py", line 15, in cached_import
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'django.template.context_processors'
+ERROR 2025-05-21 03:16:23,332 middleware Exception: No module named 'django.template.context_processors'
+ERROR 2025-05-21 03:16:23,332 middleware Request: <WSGIRequest: GET '/admin/'>
+ERROR 2025-05-21 03:16:23,332 middleware API Error: No module named 'django.template.context_processors'
+Traceback (most recent call last):
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/core/handlers/base.py", line 220, in _get_response
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 114, in render
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/response.py", line 92, in rendered_content
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/backends/django.py", line 61, in render
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/base.py", line 169, in render
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/context.py", line 251, in bind_template
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/functional.py", line 47, in __get__
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/engine.py", line 118, in template_context_processors
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/template/engine.py", line 118, in <genexpr>
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/module_loading.py", line 30, in import_string
+  File "/Users/batuhanerdemir/Documents/GitHub/cs308-project-team12/app-backend/.venv/lib/python3.13/site-packages/django/utils/module_loading.py", line 15, in cached_import
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1324, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'django.template.context_processors'

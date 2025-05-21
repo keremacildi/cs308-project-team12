@@ -40,14 +40,12 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'app_backend.middleware.InputSanitizationMiddleware',  # Add our custom sanitization middleware
-    'app_backend.middleware.APIErrorMiddleware',  # <- move it up
+    'app_backend.middleware.InputSanitizationMiddleware',
+    'app_backend.middleware.APIErrorMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',  # Re-enable CSRF protection
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    # 'csp.middleware.CSPMiddleware',  # Add Content Security Policy middleware (temporarily disabled)
 ]
 
 
@@ -157,10 +155,10 @@ CSRF_TRUSTED_ORIGINS = [
     "http://192.168.1.14:3000",
     "http://192.168.1.14:8000"
 ]
-CSRF_COOKIE_SAMESITE = 'Lax'  # Changed from None to Lax for better security
-CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
-CSRF_USE_SESSIONS = True  # Changed to True for better security
-CSRF_COOKIE_HTTPONLY = True  # Changed to True to prevent JavaScript access
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SECURE = False
+CSRF_COOKIE_SAMESITE = None
 
 # Session settings
 SESSION_COOKIE_SAMESITE = 'Lax'  # Changed from None to Lax for better security
@@ -170,7 +168,7 @@ SESSION_COOKIE_HTTPONLY = True
 # REST Framework settings with improved security
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',  # Default to requiring authentication
+        'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',

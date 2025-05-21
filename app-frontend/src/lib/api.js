@@ -172,12 +172,13 @@ export const api = {
     },
 
     login: async (credentials) => {
+      document.cookie = 'sessionid=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+
       const url = `${API_URL}/api/auth/login/`;
       const requestInfo = logRequest('POST', url, credentials);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(credentials),
       });
       
@@ -216,17 +217,17 @@ export const api = {
     logout: async () => {
       const url = `${API_URL}/api/auth/logout/`;
       const requestInfo = logRequest('POST', url);
-      const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-      });
+      // const response = await fetch(url, {
+      //   method: 'POST',
+      //   credentials: 'include',
+      // });
       
       // Clear all authentication cookies
       document.cookie = 'userSession=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       document.cookie = 'isAuthenticated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       document.cookie = 'user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       document.cookie = 'csrftoken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-      
+      document.cookie = 'sessionid=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       // Clear localStorage items
       localStorage.removeItem('user');
       localStorage.removeItem('isLoggedIn');

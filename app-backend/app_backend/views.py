@@ -13,12 +13,12 @@ from django.contrib.auth.signals import user_logged_in
 from django.contrib.admin.views.decorators import staff_member_required
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.authentication import SessionAuthentication
-from .permissions import IsStaff
+from .permissions import IsStaff, IsCustomer, IsProductManager, IsSalesManager
 from django.db import models, transaction
 from django.views.decorators.csrf import csrf_exempt
 from .models import (
@@ -54,6 +54,10 @@ from rest_framework.parsers import JSONParser
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+class IsSalesManager(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and hasattr(request.user, 'profile') and request.user.profile.role == 'sales_manager'
 
 # --- Home View ---
 def home(request):
@@ -609,34 +613,11 @@ def login_api(request):
     # Log the user in (creates a session)
     login(request, user)
     
-    # Get a fresh CSRF token
-    csrf_token = get_token(request)
-    
     # Create response
     resp = Response({
         'message': 'Login successful',
         'user': UserSerializer(user).data
     }, status=status.HTTP_200_OK)
-    
-    # Set CSRF cookie with secure settings
-    resp.set_cookie(
-        'csrftoken',
-        csrf_token,
-        httponly=False,   # Allow JS to read for X-CSRFToken header
-        samesite='Lax',
-        secure=settings.CSRF_COOKIE_SECURE,  # True in production
-        max_age=3600 * 24 * 7  # 7 days
-    )
-    
-    # Set session cookie with secure settings
-    resp.set_cookie(
-        'sessionid',
-        request.session.session_key,
-        httponly=True,    # Prevent JavaScript access
-        samesite='Lax',
-        secure=settings.SESSION_COOKIE_SECURE,  # True in production
-        max_age=3600 * 24 * 1  # 1 day
-    )
     
     # Log successful login
     logger.info(f"User {user.username} logged in successfully from {client_ip}")
@@ -883,31 +864,9 @@ def change_password(request):
 def logout_api(request):
     """
     Logout the current user
-    Expects:
-    {
-        "user": user_id
-    }
     """
-    # Get user ID from request data
-    user_id = request.data.get('user')
-    if not user_id:
-        return Response(
-            {'error': 'User ID is required'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-        
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        return Response(
-            {'error': f'User with ID {user_id} not found'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    
-    # We don't actually need to do anything here since we're no longer using sessions
-    return Response({
-        'message': 'Logged out successfully'
-    })
+    logout(request)
+    return Response({'message': 'Logged out successfully'})
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -1473,3 +1432,33 @@ def admin_delivery_list(request):
             ('delivery_completed', order.status == 'delivered'),
         ]))
     return Response(delivery_items)
+
+# Örnek: Sadece Sales Manager erişebilsin diye bir endpoint
+@api_view(['GET'])
+@permission_classes([IsSalesManager])
+def sales_manager_only_view(request):
+    return Response({'message': 'Hello Sales Manager!'}, status=200)
+
+# Customer panel örnekleri
+@api_view(['GET', 'POST'])
+@permission_classes([IsCustomer])
+def wishlist_api(request):
+    return Response({'message': 'Customer wishlist endpoint'})
+
+# Product Manager panel örnekleri
+@api_view(['POST'])
+@permission_classes([IsProductManager])
+def add_product_api(request):
+    return Response({'message': 'Product Manager add product endpoint'})
+
+# Sales Manager panel örnekleri
+@api_view(['POST'])
+@permission_classes([IsSalesManager])
+def set_price_api(request):
+    return Response({'message': 'Sales Manager set price endpoint'})
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def test_open(request):
+    return Response({'ok': True})

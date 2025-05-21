@@ -29,7 +29,7 @@ urlpatterns = [
     
     # Auth
     path('api/auth/login/', csrf_exempt(views.login_api), name='api_login'),
-    path('api/auth/logout/', views.logout_api, name='api_logout'),
+    path('api/auth/logout/', csrf_exempt(views.logout_api), name='api_logout'),
     path('api/auth/register/', csrf_exempt(views.register_api), name='api_register'),
     path('api/auth/forgot-password/', views.forgot_password, name='api_forgot_password'),
     path('api/auth/reset-password/', views.reset_password, name='api_reset_password'),
@@ -59,6 +59,21 @@ urlpatterns = [
 
     # Product manager (admin) delivery tools
     path('api/admin/delivery-list/', views.admin_delivery_list, name='admin_delivery_list'),
+
+    # Sales manager only view
+    path('api/sales-manager/only/', views.sales_manager_only_view, name='sales_manager_only'),
+
+    # Customer wishlist
+    path('api/customer/wishlist/', views.wishlist_api, name='customer_wishlist'),
+
+    # Product manager add product
+    path('api/product-manager/add-product/', views.add_product_api, name='product_manager_add_product'),
+
+    # Sales manager set price
+    path('api/sales-manager/set-price/', views.set_price_api, name='sales_manager_set_price'),
+
+    # Test open endpoint
+    path('api/test-open/', views.test_open, name='test_open'),
 ]
 
 # Serve media files in development

@@ -10,15 +10,10 @@ from django.utils.deprecation import MiddlewareMixin
 
 logger = logging.getLogger(__name__)
 
-class APIErrorMiddleware:
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        response = self.get_response(request)
-        return response
-
+class APIErrorMiddleware(MiddlewareMixin):
     def process_exception(self, request, exception):
+        logger.error(f"Exception: {exception}")
+        logger.error(f"Request: {request}")
         if isinstance(exception, Http404):
             return Response(
                 {'error': 'Resource not found'},

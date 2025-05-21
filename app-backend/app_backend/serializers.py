@@ -27,19 +27,21 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    role = serializers.CharField(source='profile.role', read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_staff']
-        read_only_fields = ['id', 'is_staff']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_staff', 'role']
+        read_only_fields = ['id', 'is_staff', 'role']
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     confirm_password = serializers.CharField(write_only=True)
+    role = serializers.ChoiceField(choices=[('customer', 'Customer'), ('sales_manager', 'Sales Manager'), ('product_manager', 'Product Manager')], default='customer', required=False)
     
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'confirm_password', 'first_name', 'last_name']
+        fields = ['username', 'email', 'password', 'confirm_password', 'first_name', 'last_name', 'role']
     
     def validate_username(self, value):
         try:
@@ -89,9 +91,11 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return data
     
     def create(self, validated_data):
-        # Remove confirm_password from the data
+        role = validated_data.pop('role', 'customer')
         validated_data.pop('confirm_password', None)
         user = User.objects.create_user(**validated_data)
+        user.profile.role = role
+        user.profile.save()
         return user
 
 
