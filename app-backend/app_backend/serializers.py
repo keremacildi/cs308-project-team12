@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import (
     Product,  Category,  
      Order, OrderItem,
-    Rating, Comment, SensitiveData, RefundRequest
+    Rating, Comment, SensitiveData, RefundRequest, UserProfile
 )
 from django.contrib.auth.models import User
 from decimal import Decimal
@@ -94,8 +94,10 @@ class UserCreateSerializer(serializers.ModelSerializer):
         role = validated_data.pop('role', 'customer')
         validated_data.pop('confirm_password', None)
         user = User.objects.create_user(**validated_data)
-        user.profile.role = role
-        user.profile.save()
+        # Ensure the profile exists before accessing it
+        profile, created = UserProfile.objects.get_or_create(user=user)
+        profile.role = role
+        profile.save()
         return user
 
 
