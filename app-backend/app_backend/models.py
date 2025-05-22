@@ -82,7 +82,7 @@ class Category(models.Model):
 
 class Product(models.Model):
     id = models.AutoField(primary_key=True)
-    title = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, default="No title")
     model = models.CharField(max_length=255)
     serial_number = models.CharField(max_length=255, unique=True)
     description = models.TextField()
